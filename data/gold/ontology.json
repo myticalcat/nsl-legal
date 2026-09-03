@@ -1,0 +1,81 @@
+{
+  "_comment": "Subsumption taxonomy for PBJT Jasa Kesenian dan Hiburan. 'parent' = immediate broader category. Leaf nodes are the concrete taxable services a Perda can name. Statutory nodes come from UU 1/2022 Pasal 55(1); local nodes are subdivisions introduced by a Perda and are the reason equality matching fails.",
+  "categories": {
+    "jasa_hiburan": {
+      "label": "Jasa Kesenian dan Hiburan",
+      "parent": null,
+      "origin": "UU 1/2022 Pasal 55(1)"
+    },
+    "panti_pijat": {
+      "label": "panti pijat",
+      "parent": "jasa_hiburan",
+      "origin": "UU 1/2022 Pasal 55(1) huruf k"
+    },
+    "pijat_refleksi": {
+      "label": "pijat refleksi",
+      "parent": "jasa_hiburan",
+      "origin": "UU 1/2022 Pasal 55(1) huruf k"
+    },
+    "diskotek": {
+      "label": "diskotek",
+      "parent": "jasa_hiburan",
+      "origin": "UU 1/2022 Pasal 55(1) huruf l"
+    },
+    "karaoke": {
+      "label": "karaoke",
+      "parent": "jasa_hiburan",
+      "origin": "UU 1/2022 Pasal 55(1) huruf l"
+    },
+    "kelab_malam": {
+      "label": "kelab malam",
+      "parent": "jasa_hiburan",
+      "origin": "UU 1/2022 Pasal 55(1) huruf l"
+    },
+    "bar": {
+      "label": "bar",
+      "parent": "jasa_hiburan",
+      "origin": "UU 1/2022 Pasal 55(1) huruf l"
+    },
+    "mandi_uap_spa": {
+      "label": "mandi uap/spa",
+      "parent": "jasa_hiburan",
+      "origin": "UU 1/2022 Pasal 55(1) huruf l"
+    },
+
+    "karaoke_keluarga": {
+      "label": "karaoke keluarga",
+      "parent": "karaoke",
+      "origin": "Perda Surabaya 7/2023 Pasal 27(2) - local subdivision, no statutory counterpart"
+    },
+    "karaoke_dewasa": {
+      "label": "karaoke dewasa",
+      "parent": "karaoke",
+      "origin": "Perda Surabaya 7/2023 Pasal 27(3) - local subdivision, no statutory counterpart"
+    },
+
+    "listrik_industri_sumber_lain": {
+      "label": "konsumsi tenaga listrik dari sumber lain oleh industri/pertambangan migas",
+      "parent": "tenaga_listrik",
+      "origin": "UU 1/2022 Pasal 58(3) huruf a"
+    },
+    "listrik_dihasilkan_sendiri": {
+      "label": "konsumsi tenaga listrik yang dihasilkan sendiri",
+      "parent": "tenaga_listrik",
+      "origin": "UU 1/2022 Pasal 58(3) huruf b"
+    },
+    "tenaga_listrik": {
+      "label": "Tenaga Listrik",
+      "parent": null,
+      "origin": "UU 1/2022 Pasal 50 huruf a"
+    }
+  },
+
+  "open_textured": {
+    "dan_sejenisnya": {
+      "label": "dan sejenisnya",
+      "appears_in": "Perda Surabaya 7/2023 Pasal 27(3)",
+      "reason": "Unbounded extension of an enumerated list. Its denotation cannot be fixed without interpretation, so subsumption against the statutory lists is undecidable from text alone.",
+      "action": "abstain"
+    }
+  }
+}

@@ -1,0 +1,159 @@
+{
+  "_schema_version": "0.1",
+  "_comment": "Hand-written gold IR. Every field here was forced by a real provision in the source documents; see schema.md for why each exists.",
+
+  "instruments": {
+    "UU_1_2022": {
+      "title": "UU Nomor 1 Tahun 2022 tentang Hubungan Keuangan antara Pemerintah Pusat dan Pemerintahan Daerah",
+      "rank": 3,
+      "rank_label": "Undang-Undang (UU 12/2011 Pasal 7 ayat (1) huruf c)",
+      "jurisdiction": "nasional",
+      "in_force_from": "2022-01-05"
+    },
+    "PERDA_SBY_7_2023": {
+      "title": "Peraturan Daerah Kota Surabaya Nomor 7 Tahun 2023 tentang Pajak Daerah dan Retribusi Daerah",
+      "rank": 7,
+      "rank_label": "Perda Kabupaten/Kota (UU 12/2011 Pasal 7 ayat (1) huruf g)",
+      "jurisdiction": "kota_surabaya",
+      "in_force_from": "2024-01-05"
+    }
+  },
+
+  "norms": [
+    {
+      "id": "UU-58-1",
+      "instrument": "UU_1_2022",
+      "citation": "Pasal 58 ayat (1)",
+      "text_id": "Tarif PBJT ditetapkan paling tinggi sebesar 10% (sepuluh persen).",
+      "norm_type": "rate_constraint",
+      "modality": "obligation",
+      "tax": "PBJT",
+      "applies_to": ["*"],
+      "is_residual": true,
+      "bounds": [
+        {"op": "<=", "value": 0.10, "unit": "fraction", "source_numeral": "10%", "source_words": "sepuluh persen"}
+      ],
+      "addressee": "pembentuk_perda",
+      "open_textured_terms": [],
+      "extraction_confidence": 1.0
+    },
+    {
+      "id": "UU-58-2",
+      "instrument": "UU_1_2022",
+      "citation": "Pasal 58 ayat (2)",
+      "text_id": "Khusus tarif PBJT atas jasa hiburan pada diskotek, karaoke, kelab malam, bar, dan mandi uap/spa ditetapkan paling rendah 40% (empat puluh persen) dan paling tinggi 75% (tujuh puluh lima persen).",
+      "norm_type": "rate_constraint",
+      "modality": "obligation",
+      "tax": "PBJT",
+      "applies_to": ["diskotek", "karaoke", "kelab_malam", "bar", "mandi_uap_spa"],
+      "is_residual": false,
+      "bounds": [
+        {"op": ">=", "value": 0.40, "unit": "fraction", "source_numeral": "4Oo/o", "source_words": "empat puluh persen", "ocr_recovered": true},
+        {"op": "<=", "value": 0.75, "unit": "fraction", "source_numeral": "75%", "source_words": "tujuh puluh lima persen"}
+      ],
+      "addressee": "pembentuk_perda",
+      "open_textured_terms": [],
+      "extraction_confidence": 1.0
+    },
+    {
+      "id": "UU-58-3a",
+      "instrument": "UU_1_2022",
+      "citation": "Pasal 58 ayat (3) huruf a",
+      "text_id": "Khusus tarif PBJT atas Tenaga Listrik untuk konsumsi Tenaga Listrik dari sumber lain oleh industri, pertambangan minyak bumi dan gas alam, ditetapkan paling tinggi sebesar 3% (tiga persen).",
+      "norm_type": "rate_constraint",
+      "modality": "obligation",
+      "tax": "PBJT",
+      "applies_to": ["listrik_industri_sumber_lain"],
+      "is_residual": false,
+      "bounds": [
+        {"op": "<=", "value": 0.03, "unit": "fraction", "source_numeral": "3%", "source_words": "tiga persen"}
+      ],
+      "addressee": "pembentuk_perda",
+      "open_textured_terms": [],
+      "extraction_confidence": 1.0
+    },
+    {
+      "id": "UU-58-4",
+      "instrument": "UU_1_2022",
+      "citation": "Pasal 58 ayat (4)",
+      "text_id": "Tarif PBJT sebagaimana dimaksud pada ayat (1), ayat (2), dan ayat (3) ditetapkan dengan Perda.",
+      "norm_type": "delegation",
+      "modality": "permission",
+      "tax": "PBJT",
+      "applies_to": ["*"],
+      "delegates_to_rank": 7,
+      "delegated_scope": ["UU-58-1", "UU-58-2", "UU-58-3a"],
+      "note": "Divergence of the Perda's exact rate from any statutory figure is AUTHORISED, provided the bounds in the delegated norms are respected. Prevents false positives on every rate that merely differs.",
+      "extraction_confidence": 1.0
+    },
+
+    {
+      "id": "SBY-27-1",
+      "instrument": "PERDA_SBY_7_2023",
+      "citation": "Pasal 27 ayat (1)",
+      "text_id": "Tarif PBJT ditetapkan sebesar 10% (sepuluh persen).",
+      "norm_type": "rate_constraint",
+      "modality": "obligation",
+      "tax": "PBJT",
+      "applies_to": ["*"],
+      "is_residual": true,
+      "bounds": [
+        {"op": "==", "value": 0.10, "unit": "fraction", "source_numeral": "10%", "source_words": "sepuluh persen"}
+      ],
+      "addressee": "wajib_pajak",
+      "open_textured_terms": [],
+      "extraction_confidence": 1.0
+    },
+    {
+      "id": "SBY-27-2",
+      "instrument": "PERDA_SBY_7_2023",
+      "citation": "Pasal 27 ayat (2)",
+      "text_id": "Khusus tarif PBJT atas jasa hiburan pada karaoke keluarga ditetapkan sebesar 40% (empat puluh persen).",
+      "norm_type": "rate_constraint",
+      "modality": "obligation",
+      "tax": "PBJT",
+      "applies_to": ["karaoke_keluarga"],
+      "is_residual": false,
+      "bounds": [
+        {"op": "==", "value": 0.40, "unit": "fraction", "source_numeral": "40%", "source_words": "empat puluh persen"}
+      ],
+      "addressee": "wajib_pajak",
+      "open_textured_terms": [],
+      "extraction_confidence": 1.0
+    },
+    {
+      "id": "SBY-27-3",
+      "instrument": "PERDA_SBY_7_2023",
+      "citation": "Pasal 27 ayat (3)",
+      "text_id": "Khusus tarif PBJT atas jasa hiburan pada karaoke dewasa, diskotek, kelab malam, bar, panti pijat, refleksi, mandi uap/spa, dan sejenisnya ditetapkan sebesar 50% (lima puluh persen).",
+      "norm_type": "rate_constraint",
+      "modality": "obligation",
+      "tax": "PBJT",
+      "applies_to": ["karaoke_dewasa", "diskotek", "kelab_malam", "bar", "panti_pijat", "pijat_refleksi", "mandi_uap_spa"],
+      "is_residual": false,
+      "bounds": [
+        {"op": "==", "value": 0.50, "unit": "fraction", "source_numeral": "50%", "source_words": "lima puluh persen"}
+      ],
+      "addressee": "wajib_pajak",
+      "open_textured_terms": ["dan_sejenisnya"],
+      "extraction_confidence": 0.95
+    },
+    {
+      "id": "SBY-27-4a",
+      "instrument": "PERDA_SBY_7_2023",
+      "citation": "Pasal 27 ayat (4) huruf a",
+      "text_id": "Khusus tarif PBJT atas Tenaga Listrik untuk konsumsi Tenaga Listrik dari sumber lain oleh industri, pertambangan minyak bumi dan gas alam, ditetapkan sebesar 3% (tiga persen).",
+      "norm_type": "rate_constraint",
+      "modality": "obligation",
+      "tax": "PBJT",
+      "applies_to": ["listrik_industri_sumber_lain"],
+      "is_residual": false,
+      "bounds": [
+        {"op": "==", "value": 0.03, "unit": "fraction", "source_numeral": "3 %", "source_words": "tiga persen"}
+      ],
+      "addressee": "wajib_pajak",
+      "open_textured_terms": [],
+      "extraction_confidence": 1.0
+    }
+  ]
+}
