@@ -116,3 +116,85 @@ def _unparen_repair(tok):
 
 def _is_letter(tok):
     return len(tok) == 1 and tok.isalpha()
+
+
+EXTERNAL_PATTERNS = [
+    re.compile(r"undang-undang\s+dasar", re.IGNORECASE),
+    re.compile(r"ketentuan\s+peraturan\s+perundang-undangan", re.IGNORECASE),
+    re.compile(r"peraturan\s+perundang-undangan", re.IGNORECASE),
+    re.compile(r"undang-undang\s+(mengenai|di\s+bidang|nomor)", re.IGNORECASE),
+    re.compile(r"peraturan\s+(daerah|pemerintah|presiden|menteri)(\s+ini)?", re.IGNORECASE),
+    re.compile(r"lampiran", re.IGNORECASE),
+]
+
+
+def _match_external(span):
+    """If `span` names something outside this document's own Pasal
+    structure (another named regulation, the Constitution, a Lampiran,
+    the generic 'ketentuan peraturan perundang-undangan'), return a short
+    human-readable note. Otherwise None -- span is a citation to parse."""
+    for pat in EXTERNAL_PATTERNS:
+        m = pat.search(span)
+        if m:
+            return span[m.start():m.start() + 60].strip()
+    return None
+
+
+def _read_targets(words, current_pasal):
+    """Walk a tokenized citation span and build the list of targets it
+    names. A named Pasal persists across a dan/atau list until a new Pasal
+    is named ('Pasal 6 ayat (1) atau ayat (2)' -> both targets are Pasal
+    6); when no Pasal is ever named, every target defaults to
+    current_pasal (the common bare-ayat-list case, e.g. UU-58-4)."""
+    targets = []
+    pasal = None
+    ayat = None
+    pending_pasal_only = False
+    i, n = 0, len(words)
+
+    while i < n:
+        w = _canon(words[i])
+
+        if w in KEYWORDS and i + 1 < n and _canon(words[i + 1]) == w:
+            i += 1  # doubled keyword: 'Pasal Pasal 44', 'pada pada ayat (7)'
+            continue
+
+        if w == "pasal" and i + 1 < n and _is_plain_number(words[i + 1]):
+            pasal = words[i + 1]
+            ayat = None
+            pending_pasal_only = True
+            i += 2
+            continue
+
+        if w == "ayat" and i + 1 < n and _is_paren_number(words[i + 1]):
+            repaired = _unparen_repair(words[i + 1])
+            if repaired is None:
+                break
+            ayat = repaired
+            target_pasal = pasal if pasal is not None else current_pasal
+            pending_pasal_only = False
+            huruf = None
+            j = i + 2
+            if j + 1 < n and _canon(words[j]) == "huruf" and _is_letter(words[j + 1]):
+                huruf = words[j + 1]
+                j += 2
+            targets.append({"pasal": target_pasal, "ayat": ayat, "huruf": huruf})
+            i = j
+            continue
+
+        if w == "huruf" and i + 1 < n and _is_letter(words[i + 1]):
+            target_pasal = pasal if pasal is not None else current_pasal
+            pending_pasal_only = False
+            targets.append({"pasal": target_pasal, "ayat": ayat, "huruf": words[i + 1]})
+            i += 2
+            continue
+
+        if w in ("dan", "atau", "pada", "dalam"):
+            i += 1
+            continue
+
+        break  # unrecognised token: the citation chain ends here
+
+    if pending_pasal_only:
+        targets.append({"pasal": pasal, "ayat": None, "huruf": None})
+    return targets

@@ -3,7 +3,9 @@
 real excerpt from data/txt/, copied verbatim (only re-indented for
 readability), not a constructed example."""
 
-from crossref import build_index, _tokenize, _canon, _unparen_repair
+from crossref import (
+    build_index, _tokenize, _canon, _unparen_repair, _read_targets, _match_external,
+)
 
 # --- real excerpt: PERDA_NO_1_TAHUN_2024.txt lines 1221-1231
 JAKARTA_P44_P48 = """
@@ -141,10 +143,88 @@ def check_unparen_repair():
     assert _unparen_repair("(2)") == "2"
 
 
+def check_bare_ayat_list_same_pasal():
+    # UU 1/2022 Pasal 58(4): 'ayat (l), ayat (2), dan ayat (3)' -- corrupted
+    # first paren, no Pasal named, so every target defaults to current_pasal.
+    words = _tokenize("pada ayat (l), ayat (2), dan ayat (3) ditetapkan")
+    targets = _read_targets(words, current_pasal="58")
+    assert targets == [
+        {"pasal": "58", "ayat": "1", "huruf": None},
+        {"pasal": "58", "ayat": "2", "huruf": None},
+        {"pasal": "58", "ayat": "3", "huruf": None},
+    ], targets
+
+
+def check_cross_pasal_with_huruf():
+    # PERDA_NO_1_TAHUN_2024 Pasal 80 citing Pasal 74 ayat (l) huruf f
+    # (corrupted paren, real text).
+    words = _tokenize("dalam Pasal 74 ayat (l) huruf f merupakan")
+    targets = _read_targets(words, current_pasal="80")
+    assert targets == [{"pasal": "74", "ayat": "1", "huruf": "f"}], targets
+
+
+def check_bare_pasal_no_ayat():
+    # UU 1/2022 Pasal 59(1) citing Pasal 57 (no ayat/huruf at all).
+    words = _tokenize("dalam Pasal 57 dengan tarif")
+    targets = _read_targets(words, current_pasal="59")
+    assert targets == [{"pasal": "57", "ayat": None, "huruf": None}], targets
+
+
+def check_pasal_direct_huruf_no_ayat():
+    # UU 1/2022 Pasal 51(1) citing Pasal 50 huruf a (Pasal 50 has no ayat).
+    words = _tokenize("dalam Pasal 50 huruf a meliputi")
+    targets = _read_targets(words, current_pasal="51")
+    assert targets == [{"pasal": "50", "ayat": None, "huruf": "a"}], targets
+
+
+def check_doubled_pasal_keyword():
+    # PERDA_NO_1_TAHUN_2024 Pasal 48(1) citing 'Pasal Pasal 44 huruf d'
+    # (real doubled-word OCR artifact).
+    words = _tokenize("dalam Pasal Pasal 44 huruf d meliputi")
+    targets = _read_targets(words, current_pasal="48")
+    assert targets == [{"pasal": "44", "ayat": None, "huruf": "d"}], targets
+
+
+def check_ayat_keyword_typo_same_pasal():
+    # Perda Surabaya 7/2023 Pasal 177(10) citing 'ayal (2) dan ayat (4)'
+    # (real keyword typo, both same-Pasal).
+    words = _tokenize("pada ayal (2) dan ayat (4) meliputi")
+    targets = _read_targets(words, current_pasal="177")
+    assert targets == [
+        {"pasal": "177", "ayat": "2", "huruf": None},
+        {"pasal": "177", "ayat": "4", "huruf": None},
+    ], targets
+
+
+def check_huruf_typo_degrades_to_bare_pasal():
+    # UU 1/2022 Pasal 55(1) citing 'Pasal 50 hunrf e' -- 'hunrf' is distance
+    # 2 from 'huruf', so the parser can't recognise the huruf keyword. It
+    # should NOT drop the reference entirely: 'Pasal 50' was cleanly read
+    # before the typo hit, so that much is flushed as a whole-Pasal target
+    # -- graceful degradation rather than silence.
+    words = _tokenize("dalam Pasal 50 hunrf e meliputi")
+    targets = _read_targets(words, current_pasal="55")
+    assert targets == [{"pasal": "50", "ayat": None, "huruf": None}], targets
+
+
+def check_external_reference():
+    note = _match_external("diatur dalam ketentuan peraturan perundang-undangan.")
+    assert note is not None and "peraturan perundang-undangan" in note
+
+
+def check_external_reference_none_for_citation():
+    assert _match_external("dimaksud dalam Pasal 55 ayat (1) huruf l") is None
+
+
 CHECKS = [
     check_index_basic, check_index_ayat_and_huruf, check_index_stops_before_penjelasan,
     check_tokenize_paren_and_words, check_canon_repairs_real_keyword_typos,
     check_canon_leaves_far_typos_alone, check_unparen_repair,
+    check_bare_ayat_list_same_pasal, check_cross_pasal_with_huruf,
+    check_bare_pasal_no_ayat, check_pasal_direct_huruf_no_ayat,
+    check_doubled_pasal_keyword, check_ayat_keyword_typo_same_pasal,
+    check_huruf_typo_degrades_to_bare_pasal, check_external_reference,
+    check_external_reference_none_for_citation,
 ]
 
 
