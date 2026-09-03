@@ -14,16 +14,52 @@ Exactly one stage is neural (extraction). Everything downstream is
 deterministic. This is deliberate: it lets extraction accuracy and reasoning
 accuracy be measured separately. **Do not move logic into the LLM stage.**
 
+## Status — read before assuming anything works
+
+| Component | State |
+|---|---|
+| `src/ocr_numerals.py` | working, tested against real scanned text |
+| `src/slotting.py` | working, demo only, not wired to an API |
+| `src/detect.py` | working, 21 categories, 2 conflicts found |
+| `data/gold/norms.json` | **hand-written fixture**, 8 norms |
+| `data/gold/ontology.json` | **hand-written fixture**, 23 categories |
+| `prompts/extraction_prompt.md` | written, **never executed** |
+| ontology builder | does not exist |
+| extraction runner | does not exist |
+| cross-reference resolver | does not exist |
+| coverage log | does not exist |
+| JSON Schema + load validation | does not exist |
+
+The entire neural half is currently a human reading PDFs. Everything
+downstream of extraction is real and tested. The pipeline has never run end to
+end on an unseen document.
+
+## Gold fixtures vs generated output — do not confuse these
+
+    data/gold/norms.json      hand-written, FROZEN, never overwrite
+    data/gold/ontology.json   hand-written, FROZEN, never overwrite
+    out/norms.json            extractor output, regenerated each run
+    out/ontology.json         builder output, regenerated each run
+
+The two files are structurally identical, so only the directory distinguishes
+them. Evaluation compares `out/` against `data/gold/`. If a pipeline stage
+writes into `data/gold/`, the ground truth is destroyed and the comparison
+silently becomes "does the extractor agree with itself", which always passes.
+
+The ontology is a special case: it legitimately grows, because each new Perda
+introduces local subdivisions (`karaoke_keluarga`) absent from earlier
+documents. Split it — the twelve statutory categories from UU Pasal 55 are
+frozen and scoreable; new local categories land in `pending_review` for human
+confirmation. Score the builder on statutory recovery only.
+
 ## Layout
 
-    src/ocr_numerals.py   two-channel numeral recovery (digits + words)
-    src/slotting.py       numeral slotting; the join between OCR and LLM
-    src/detect.py         IR → Z3 compiler and conflict detection
-    data/gold/norms.json  hand-written gold IR (8 norms, UU 58 + Perda 27)
-    data/gold/ontology.json  category subsumption taxonomy
+    src/                  pipeline modules
+    data/txt/             pdftotext -layout output for all four documents
+    data/gold/            frozen hand-annotated ground truth
     prompts/              extraction prompt with real few-shot examples
-    schema/schema.md      IR field documentation, each justified by a provision
-    tests/                regression suite, all cases from real scanned text
+    schema/schema.md      IR field documentation, each field justified by a provision
+    tests/                regression suite, every case a real string from a scan
 
 ## Decisions already made — do not relitigate
 
@@ -48,6 +84,22 @@ accuracy be measured separately. **Do not move logic into the LLM stage.**
   (`dan sejenisnya`) are referred, not guessed. Note the semantics: a vague
   tail does not undermine categories the drafter named explicitly; it only
   leaves the norm's outer boundary undetermined.
+- **Pipeline ordering: definitions before rates.** Categories live in
+  definitional articles (UU Pasal 55, Perda Pasal 25); constraints live in rate
+  articles (Pasal 58, Pasal 27). The ontology builder must run before the norm
+  extractor, because `applies_to` can only reference ids that already exist.
+  This was learned the hard way: the hand-built ontology was drawn from rate
+  provisions alone and silently missed ten of the twelve statutory categories.
+- **Only `rate_constraint` is implemented.** `obligation`, `prohibition`, and
+  `permission` are declared in the schema and ignored by the compiler. Note
+  that the *applicability* reasoning is already general — subsumption, lex
+  specialis, and delegation are not numeric. Only the constraint language is.
+  Extending to strict O/F conflicts is a second constraint kind (booleans plus
+  `Not(And(Obliged, Forbidden))`), reusing `applicable()` unchanged. The real
+  cost is agent/action alignment (`pelaku usaha` vs `setiap orang`), not the
+  encoding. Before building it, grep the corpus for `wajib`/`dilarang` pairs
+  with a national counterpart — if genuine cross-tier contradictions are rare,
+  that finding justifies the numeric focus better than any design argument.
 - **Schema does not self-modify.** Unrepresentable provisions go to a coverage
   log with a reason code. The ontology may grow, but new subsumption edges land
   in `pending_review` before going live.
@@ -70,22 +122,45 @@ mandi uap/spa` at huruf l. Pasal 58(2)'s 40–75% band applies only to the
 huruf-l list, so panti pijat falls back to the 10% general cap in 58(1).
 Perda Surabaya 7/2023 Pasal 27(3) taxes panti pijat at 50%.
 
+**The Perda also contradicts itself.** Surabaya's own Pasal 25 copies the
+statutory list verbatim, including `k. panti pijat dan pijat refleksi` as an
+item separate from `l. diskotek, karaoke, ...`. So the Perda defines panti
+pijat as a huruf-k service and then taxes it at the huruf-l rate. This is
+stronger evidence than the cross-instrument conflict, because it does not
+depend on any interpretive choice — the drafter's own definitional article
+settles which bracket applies. Lead with this.
+
 Four-hop reasoning. This is the paper's worked example. **Needs verification
 by a lawyer, and check whether Pasal 58 has been amended** — the entertainment
 tax band was contentious in early 2024 and may have been challenged.
 
-## Open work
+**The residual path is not trigger-happy.** Of 21 categories checked, 12 reach
+the national rule via the residual general cap. Ten of those are COMPLIANT and
+two CONFLICT. Categories Surabaya sets no special rate for take Pasal 27(1)'s
+flat 10%, exactly at the national ceiling. Use this when someone suspects the
+mechanism just flags everything it touches.
 
-1. Cross-reference resolution (`sebagaimana dimaksud pada ayat (1)`) — not yet
-   built, and it is upstream of everything.
-2. Extraction runner: prompt → API → validate → repair loop. Not written.
-3. JSON Schema file + validation on load. Currently only prose docs.
-4. Coverage log with a fixed failure taxonomy.
-5. Perturbation engine for synthetic data (operators listed in docs).
-6. Held-out real test set: ~60 pairs from Mahkamah Agung hak uji materiil
+## Open work — in dependency order
+
+1. **Ontology builder.** Extract enumerated lists from definitional articles
+   (`a. ... ; b. ... ; dan c. ...` is highly regular drafting). Emit
+   `{id, label, parent, origin}`. Cross-instrument alignment goes to
+   `pending_review`, never auto-merged: `karaoke_keluarga ⊑ karaoke` is a legal
+   judgement. Immediate check available — it should recover the same 12
+   statutory categories currently in the gold fixture.
+2. **Cross-reference resolution** (`sebagaimana dimaksud pada ayat (1)`).
+   Survey the distinct reference forms and their counts before building the
+   resolver.
+3. **Extraction runner.** Prompt → API → validate → repair (two attempts, then
+   human queue). Test on UU Pasal 58 first, since gold exists for it.
+4. JSON Schema file + validation on load.
+5. Coverage log with a fixed failure taxonomy.
+6. Perturbation engine for synthetic data.
+7. Held-out real test set: ~60 pairs from Mahkamah Agung hak uji materiil
    decisions, hand-annotated, never tuned on.
-7. Ablation table: LLM end-to-end / LLM+IR+LLM reasoning / full pipeline /
-   gold IR + Z3.
+8. Ablation table: LLM end-to-end / LLM+IR+LLM reasoning / full pipeline /
+   gold IR + Z3. Row 2 is the one reviewers care about — it isolates whether
+   the solver helps or merely the structuring.
 
 ## Corpus notes
 
@@ -100,9 +175,17 @@ are never comparable to each other. Pairing must be tier-aware.
 
 ## Conventions
 
+- **Never write to `data/gold/`.** It is frozen ground truth. Pipeline output
+  goes to `out/`. The files are chmod 444; if a write fails there, that is the
+  guard working, not a bug to route around.
 - Run tests before and after any change to `ocr_numerals.py`. Every test case
   is a real string from a scanned statute.
 - New corruption patterns get a regression test, not just a fix.
+- Survey real data before designing against imagined data. This habit found the
+  OCR corruption, the line-wrapped parentheticals (which had been silently
+  dropping half the numerals in the statute), and the ten missing categories.
 - Keep legal terms in Indonesian. Do not translate `pasal`, `ayat`, `tarif`.
 - Verdicts must cite provisions. `assert_and_track` everywhere in Z3, so unsat
   cores name pasal rather than anonymous constraints.
+- Update this file when a decision changes. The `dan sejenisnya` abstain
+  semantics were corrected once already; undocumented corrections revert.
