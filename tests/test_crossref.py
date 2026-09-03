@@ -4,7 +4,8 @@ real excerpt from data/txt/, copied verbatim (only re-indented for
 readability), not a constructed example."""
 
 from crossref import (
-    build_index, _tokenize, _canon, _unparen_repair, _read_targets, _match_external,
+    build_index, resolve_references, _tokenize, _canon, _unparen_repair,
+    _read_targets, _match_external,
 )
 
 # --- real excerpt: PERDA_NO_1_TAHUN_2024.txt lines 1221-1231
@@ -55,6 +56,90 @@ UU_P58 = """
                    mengalikan dasar pengenaan PBJT sebagaimaha
                    dimaksud dalam Pasal 57 dengan tarif PBJT
                    sebagaimana dimaksud dalam Pasal 58 ayat (4).
+"""
+
+# --- real excerpt: PERDA_NO_1_TAHUN_2024.txt lines 1890-1929 and 2012-2017
+JAKARTA_P74_P80 = """
+                                  Pasal 74
+
+(1)   Jenis penyediaan/pelayanan barang dan/atau jasa yang
+      merupakan objek Retribusi Jasa Usaha sebagaimana dimaksud
+      dalam Pasal 66 ayat (1) huruf b meliputi:
+      a. penyediaan tempat kegiatan usaha berupa pasar grosir,
+         pertokoan, dan tempat kegiatan usaha lainnya;
+      b. penyediaan tempat pelelangan ikan, ternak, hasil bumi, dan
+         hasil hutan termasuk fasilitas lainnya dalam lingkungan
+         tempat pelelangan;
+      c. penyediaan tempat khusus parkir di luar badan jalan;
+      d. penyediaan tempat penginapan/pesanggrahan/vila;
+      e. pelayanan rumah pemotongan hewan ternak;
+      f. pelayanan jasa kepelabuhanan;
+      g. pelayanan tempat rekreasi, pariwisata, dan olahraga;
+      h. pelayanan penyeberangan orang atau barang dengan
+         menggunakan kendaraan di air;
+      i. penjualan hasil produksi usaha Pemerintah Provinsi DKI
+         Jakarta; dan
+      j. pemanfaatan aset Pemerintah Provinsi DKI Jakarta yang tidak
+         mengganggu penyelenggaraan tugas dan fungsi Satuan Kerja
+         Perangkat Daerah dan/atau optimalisasi aset Pemerintah
+         Provinsi DKI Jakarta dengan tidak mengubah status
+         kepemilikan sesuai dengan ketentuan peraturan perundang-
+         undangan.
+
+(2)   Rincian objek Retribusi Jasa Usaha sebagaimana dimaksud pada
+      ayat (1) tercantum dalam Lampiran yang merupakan bagian tidak
+      terpisahkan dalam Peraturan Daerah ini.
+
+(3)   Penyediaan atau pelayanan sebagaimana dimaksud pada ayat (1)
+      disediakan atau diberikan oleh Pemerintah Provinsi DKI Jakarta
+      berdasarkan jasa atau pelayanan yang diberikan dan kewenangan
+      Provinsi DKI Jakarta sebagaimana diatur dalam ketentuan
+      peraturan perundang-undangan.
+
+(4)   Pelayanan sebagaimana dimaksud pada ayat (3) termasuk
+      pelayanan yang diberikan oleh BLUD.
+
+                                Pasal 80
+
+Pelayanan jasa kepelabuhanan sebagaimana dimaksud dalam Pasal 74
+ayat (l) huruf f merupakan pelayanan kepelabuhanan pada pelabuhan
+yang disediakan, dimiliki, dan/atau dikelola oleh Pemerintah Provinsi
+DKI Jakarta.
+"""
+
+# --- real excerpt: Perda Surabaya 7/2023 lines 4726-4794 (trimmed)
+SURABAYA_P177 = """
+                                Pasal 177
+
+(1) Walikota dapat memberikan kemudahan perpajakan Daerah
+    kepada Wajib Pajak, berupa :
+   a. perpanjangan batas waktu pembayaran atau pelaporan
+      Pajak; dan/atau
+   b. pemberian fasilitas angsuran atau penundaan
+      pembayaran Pajak terutang atau Utang Pajak.
+(2) Perpanjangan batas waktu pembayaran atau pelaporan Pajak
+    sebagaimana dimaksud pada ayat (1) huruf a, diberikan
+    kepada Wajib Pajak yang mengalami keadaan kahar.
+(3) Perpanjangan batas waktu pembayaran atau pelaporan Pajak
+    sebagaimana dimaksud pada ayat (1) huruf a dapat diberikan
+    Walikota secara jabatan.
+(4) Pemberian fasilitas angsuran atau penundaan pembayaran
+    Pajak terutang atau Utang Pajak sebagaimana dimaksud
+    pada ayat (1) huruf b dilakukan dalam hal Wajib Pajak
+    mengalami kesulitan likuiditas.
+    (10) Keadaan kahar sebagaimana dimaksud pada ayal (2) dan
+         ayat (4) meliputi:
+        a. bencana alam;
+        b. kebakaran.
+"""
+
+# --- real excerpt: UU_Nomor_1_Tahun_2022.txt (Pasal 199 area, line 4574)
+AMENDMENT_FIXTURE = """
+                                  Pasal 199
+
+Undang-Undang Nomor 21 Tahun 2001 tentang Otonomi Khusus Provinsi Papua
+sebagaimana telah beberapa kali diubah, terakhir dengan Undang-Undang
+Nomor 2 Tahun 2021 tetap berlaku.
 """
 
 # --- PENJELASAN-boundary fixture: real heading text (line 2922) + real
@@ -123,29 +208,21 @@ def check_tokenize_paren_and_words():
 
 
 def check_canon_repairs_real_keyword_typos():
-    # 'ayal' for 'ayat' -- real corruption, Perda Surabaya 7/2023 line 4784
     assert _canon("ayal") == "ayat"
-    # 'alat' for 'ayat' -- real corruption, UU 1/2022 (Dana Otonomi Khusus clause)
     assert _canon("alat") == "ayat"
-    # unrelated real word must NOT be coerced
     assert _canon("pajak") == "pajak"
 
 
 def check_canon_leaves_far_typos_alone():
-    # 'hunrf' for 'huruf' -- real corruption, UU 1/2022 Pasal 55 (edit
-    # distance 2, deliberately past the distance-1 threshold)
     assert _canon("hunrf") == "hunrf"
 
 
 def check_unparen_repair():
-    # '(l)' -- real corruption, UU 1/2022 Pasal 58(4) and PERDA_NO_1_TAHUN_2024 Pasal 80
     assert _unparen_repair("(l)") == "1"
     assert _unparen_repair("(2)") == "2"
 
 
 def check_bare_ayat_list_same_pasal():
-    # UU 1/2022 Pasal 58(4): 'ayat (l), ayat (2), dan ayat (3)' -- corrupted
-    # first paren, no Pasal named, so every target defaults to current_pasal.
     words = _tokenize("pada ayat (l), ayat (2), dan ayat (3) ditetapkan")
     targets = _read_targets(words, current_pasal="58")
     assert targets == [
@@ -156,38 +233,30 @@ def check_bare_ayat_list_same_pasal():
 
 
 def check_cross_pasal_with_huruf():
-    # PERDA_NO_1_TAHUN_2024 Pasal 80 citing Pasal 74 ayat (l) huruf f
-    # (corrupted paren, real text).
     words = _tokenize("dalam Pasal 74 ayat (l) huruf f merupakan")
     targets = _read_targets(words, current_pasal="80")
     assert targets == [{"pasal": "74", "ayat": "1", "huruf": "f"}], targets
 
 
 def check_bare_pasal_no_ayat():
-    # UU 1/2022 Pasal 59(1) citing Pasal 57 (no ayat/huruf at all).
     words = _tokenize("dalam Pasal 57 dengan tarif")
     targets = _read_targets(words, current_pasal="59")
     assert targets == [{"pasal": "57", "ayat": None, "huruf": None}], targets
 
 
 def check_pasal_direct_huruf_no_ayat():
-    # UU 1/2022 Pasal 51(1) citing Pasal 50 huruf a (Pasal 50 has no ayat).
     words = _tokenize("dalam Pasal 50 huruf a meliputi")
     targets = _read_targets(words, current_pasal="51")
     assert targets == [{"pasal": "50", "ayat": None, "huruf": "a"}], targets
 
 
 def check_doubled_pasal_keyword():
-    # PERDA_NO_1_TAHUN_2024 Pasal 48(1) citing 'Pasal Pasal 44 huruf d'
-    # (real doubled-word OCR artifact).
     words = _tokenize("dalam Pasal Pasal 44 huruf d meliputi")
     targets = _read_targets(words, current_pasal="48")
     assert targets == [{"pasal": "44", "ayat": None, "huruf": "d"}], targets
 
 
 def check_ayat_keyword_typo_same_pasal():
-    # Perda Surabaya 7/2023 Pasal 177(10) citing 'ayal (2) dan ayat (4)'
-    # (real keyword typo, both same-Pasal).
     words = _tokenize("pada ayal (2) dan ayat (4) meliputi")
     targets = _read_targets(words, current_pasal="177")
     assert targets == [
@@ -197,11 +266,6 @@ def check_ayat_keyword_typo_same_pasal():
 
 
 def check_huruf_typo_degrades_to_bare_pasal():
-    # UU 1/2022 Pasal 55(1) citing 'Pasal 50 hunrf e' -- 'hunrf' is distance
-    # 2 from 'huruf', so the parser can't recognise the huruf keyword. It
-    # should NOT drop the reference entirely: 'Pasal 50' was cleanly read
-    # before the typo hit, so that much is flushed as a whole-Pasal target
-    # -- graceful degradation rather than silence.
     words = _tokenize("dalam Pasal 50 hunrf e meliputi")
     targets = _read_targets(words, current_pasal="55")
     assert targets == [{"pasal": "50", "ayat": None, "huruf": None}], targets
@@ -216,6 +280,91 @@ def check_external_reference_none_for_citation():
     assert _match_external("dimaksud dalam Pasal 55 ayat (1) huruf l") is None
 
 
+def check_resolve_same_pasal_multi_target():
+    idx = build_index(UU_P58)
+    refs = resolve_references(idx["58"]["text"], idx, current_pasal="58")
+    hits = [r for r in refs if r["status"] == "same_pasal"]
+    assert len(hits) == 1, [r["status"] for r in refs]
+    r = hits[0]
+    assert [t["ayat"] for t in r["targets"]] == ["1", "2", "3"]
+    assert all(t["pasal"] == "58" for t in r["targets"])
+    assert all(t["text"] is None for t in r["targets"])
+    assert r["needs_review"] is False
+
+
+def check_resolve_cross_pasal_fetches_text():
+    idx = build_index(UU_P58)
+    refs = resolve_references(idx["59"]["text"], idx, current_pasal="59")
+    cross = [r for r in refs if r["status"] == "cross_pasal"]
+    assert len(cross) == 1, [r["status"] for r in refs]
+    r = cross[0]
+    assert r["targets"][0]["pasal"] == "58"
+    assert r["targets"][0]["ayat"] == "4"
+    assert "ditetapkan dengan Perda" in r["targets"][0]["text"]
+    assert r["needs_review"] is False
+
+
+def check_resolve_cross_pasal_with_corrupted_paren():
+    idx = build_index(JAKARTA_P74_P80)
+    refs = resolve_references(idx["80"]["text"], idx, current_pasal="80")
+    cross = [r for r in refs if r["status"] == "cross_pasal"]
+    assert len(cross) == 1, [r["status"] for r in refs]
+    t = cross[0]["targets"][0]
+    assert t["pasal"] == "74" and t["ayat"] == "1" and t["huruf"] == "f"
+    assert "pelayanan jasa kepelabuhanan" in t["text"]
+
+
+def check_resolve_external():
+    idx = build_index(JAKARTA_P74_P80)
+    refs = resolve_references(idx["74"]["ayat"]["3"]["text"], idx, current_pasal="74")
+    ext = [r for r in refs if r["status"] == "external"]
+    assert len(ext) == 1, [r["status"] for r in refs]
+    assert "peraturan perundang-undangan" in ext[0]["note"]
+    assert ext[0]["targets"] == []
+
+
+def check_resolve_citation_before_external_not_swallowed():
+    # Regression: Pasal 74 ayat (2)'s citation ('... ayat (1) tercantum
+    # dalam Lampiran ...') names a real same-Pasal target BEFORE
+    # mentioning something external in the same sentence. The external
+    # check must not run until the citation parser has already come up
+    # empty, or this same-Pasal ayat (1) reference gets swallowed as
+    # "external" just because "Lampiran" appears later in the sentence.
+    idx = build_index(JAKARTA_P74_P80)
+    refs = resolve_references(idx["74"]["ayat"]["2"]["text"], idx, current_pasal="74")
+    assert len(refs) == 1, [r["status"] for r in refs]
+    assert refs[0]["status"] == "same_pasal"
+    assert refs[0]["targets"] == [{"pasal": "74", "ayat": "1", "huruf": None, "text": None}]
+
+
+def check_resolve_amendment_history():
+    idx = build_index(AMENDMENT_FIXTURE)
+    refs = resolve_references(idx["199"]["text"], idx, current_pasal="199")
+    amend = [r for r in refs if r["status"] == "amendment_history"]
+    assert len(amend) == 1, [r["status"] for r in refs]
+    assert amend[0]["targets"] == []
+    assert amend[0]["needs_review"] is False
+
+
+def check_resolve_unfound_cross_pasal_needs_review():
+    idx = build_index(UU_P58)
+    refs = resolve_references(
+        "Tarif ini sebagaimana dimaksud dalam Pasal 999 ayat (1) berlaku.",
+        idx, current_pasal="58",
+    )
+    r = refs[0]
+    assert r["targets"][0]["text"] is None
+    assert r["needs_review"] is True
+
+
+def check_resolve_surabaya_ayal_typo_same_pasal():
+    idx = build_index(SURABAYA_P177)
+    refs = resolve_references(idx["177"]["ayat"]["10"]["text"], idx, current_pasal="177")
+    hits = [r for r in refs if r["status"] == "same_pasal"]
+    assert len(hits) == 1, [r["status"] for r in refs]
+    assert [t["ayat"] for t in hits[0]["targets"]] == ["2", "4"]
+
+
 CHECKS = [
     check_index_basic, check_index_ayat_and_huruf, check_index_stops_before_penjelasan,
     check_tokenize_paren_and_words, check_canon_repairs_real_keyword_typos,
@@ -225,6 +374,11 @@ CHECKS = [
     check_doubled_pasal_keyword, check_ayat_keyword_typo_same_pasal,
     check_huruf_typo_degrades_to_bare_pasal, check_external_reference,
     check_external_reference_none_for_citation,
+    check_resolve_same_pasal_multi_target, check_resolve_cross_pasal_fetches_text,
+    check_resolve_cross_pasal_with_corrupted_paren, check_resolve_external,
+    check_resolve_citation_before_external_not_swallowed,
+    check_resolve_amendment_history, check_resolve_unfound_cross_pasal_needs_review,
+    check_resolve_surabaya_ayal_typo_same_pasal,
 ]
 
 

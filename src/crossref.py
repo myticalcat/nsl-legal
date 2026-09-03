@@ -198,3 +198,104 @@ def _read_targets(words, current_pasal):
     if pending_pasal_only:
         targets.append({"pasal": pasal, "ayat": None, "huruf": None})
     return targets
+
+
+ANCHOR_RE = re.compile(
+    r"sebagaimana\s+(?:telah\s+)?(?:beberapa\s+kali\s+)?"
+    r"(dimaksud|diatur|ditetapkan|tercantum|dimaksudkan|diubah)"
+    r"[\s,]*(.{0,200}?)(?=\.|$)",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+def _lookup_text(index, target):
+    """Fetch text for a resolved target, falling back to the coarsest
+    level that exists (huruf -> ayat -> Pasal) rather than failing outright
+    on a partial miss. Returns (text_or_None, exact_match: bool)."""
+    pasal_entry = index.get(target["pasal"])
+    if pasal_entry is None:
+        return None, False
+
+    if target["ayat"] is not None:
+        ayat_entry = pasal_entry["ayat"].get(target["ayat"])
+        if ayat_entry is None:
+            return pasal_entry["text"], False
+        if target["huruf"] is not None:
+            huruf_entry = ayat_entry["huruf"].get(target["huruf"])
+            if huruf_entry is not None:
+                return huruf_entry["text"], True
+            return ayat_entry["text"], False
+        return ayat_entry["text"], True
+
+    if target["huruf"] is not None:
+        huruf_entry = pasal_entry["huruf"].get(target["huruf"])
+        if huruf_entry is not None:
+            return huruf_entry["text"], True
+        return pasal_entry["text"], False
+
+    return pasal_entry["text"], True
+
+
+def resolve_references(pasal_text, index, current_pasal):
+    """Find every 'sebagaimana ...' occurrence in one Pasal's text and
+    resolve each to a classified target. Cross-Pasal targets are looked up
+    against `index` and have their text attached; same-Pasal targets are
+    resolved (which ayat/huruf, explicitly) but left without fetched text,
+    since the caller already has the whole current Pasal in view."""
+    refs = []
+    for m in ANCHOR_RE.finditer(pasal_text):
+        verb = m.group(1).lower()
+        span = m.group(2)
+        phrase, start, end = m.group(0), m.start(), m.end()
+
+        if verb == "diubah":
+            refs.append({
+                "phrase": phrase, "start": start, "end": end, "verb": verb,
+                "status": "amendment_history", "targets": [],
+                "needs_review": False, "note": None,
+            })
+            continue
+
+        raw_targets = _read_targets(_tokenize(span), current_pasal)
+
+        if not raw_targets:
+            # Only consult the external check once the citation parser
+            # has come up empty. Otherwise a legitimate same-Pasal
+            # citation ("... ayat (1) tercantum dalam Lampiran...") would
+            # be swallowed as "external" just because something external
+            # is mentioned later in the same sentence.
+            ext_note = _match_external(span)
+            if ext_note:
+                refs.append({
+                    "phrase": phrase, "start": start, "end": end, "verb": verb,
+                    "status": "external", "targets": [],
+                    "needs_review": False, "note": ext_note,
+                })
+            else:
+                refs.append({
+                    "phrase": phrase, "start": start, "end": end, "verb": verb,
+                    "status": "unresolved", "targets": [],
+                    "needs_review": True, "note": span.strip(),
+                })
+            continue
+
+        resolved, any_cross, any_imprecise = [], False, False
+        for t in raw_targets:
+            entry = dict(t)
+            if t["pasal"] != current_pasal:
+                any_cross = True
+                text, exact = _lookup_text(index, t)
+                entry["text"] = text
+                if not exact:
+                    any_imprecise = True
+            else:
+                entry["text"] = None
+            resolved.append(entry)
+
+        status = "cross_pasal" if any_cross else "same_pasal"
+        refs.append({
+            "phrase": phrase, "start": start, "end": end, "verb": verb,
+            "status": status, "targets": resolved,
+            "needs_review": any_cross and any_imprecise, "note": None,
+        })
+    return refs
