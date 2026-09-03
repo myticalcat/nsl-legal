@@ -20,6 +20,8 @@ fully (which Pasal, which ayat) but leaves its text unfetched.
 
 import re
 
+from ocr_numerals import GLYPH, _lev
+
 PASAL_HEADER = re.compile(r"(?m)^[ \t]*Pasal[ \t]+(\d+[A-Za-z]?)[ \t]*$")
 PENJELASAN_HEADING = re.compile(r"(?m)^[ \t]*PENJELASAN[ \t]*$")
 AYAT_MARKER = re.compile(r"(?m)^[ \t]*\((\d+)\)[ \t]+")
@@ -71,3 +73,46 @@ def build_index(document_text):
             "huruf": {} if ayat else _index_huruf(pasal_text),
         }
     return index
+
+
+KEYWORDS = (
+    "pasal", "ayat", "huruf", "angka", "dan", "atau", "pada", "dalam",
+)
+
+TOKEN_RE = re.compile(r"\(\s*[0-9A-Za-z]{1,3}\s*\)?|[A-Za-z]+|[0-9]+")
+
+
+def _tokenize(span):
+    return [t.lower() for t in TOKEN_RE.findall(span)]
+
+
+def _canon(tok):
+    """Snap a single-edit OCR misspelling of a citation keyword ('ayal',
+    'alat' for 'ayat') onto the keyword. Verified against two real corpus
+    corruptions; a typo two edits away ('hunrf' for 'huruf') is
+    deliberately left unmatched."""
+    if not tok.isalpha() or tok in KEYWORDS:
+        return tok
+    for kw in KEYWORDS:
+        if _lev(tok, kw) <= 1:
+            return kw
+    return tok
+
+
+def _is_plain_number(tok):
+    return tok.isdigit()
+
+
+def _is_paren_number(tok):
+    return tok.startswith("(")
+
+
+def _unparen_repair(tok):
+    """'(l)' -> '1', '(2)' -> '2'. Returns None if no digit survives repair."""
+    inner = tok.strip("()").translate(GLYPH)
+    m = re.match(r"[0-9]+", inner)
+    return m.group(0) if m else None
+
+
+def _is_letter(tok):
+    return len(tok) == 1 and tok.isalpha()

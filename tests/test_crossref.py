@@ -3,7 +3,7 @@
 real excerpt from data/txt/, copied verbatim (only re-indented for
 readability), not a constructed example."""
 
-from crossref import build_index
+from crossref import build_index, _tokenize, _canon, _unparen_repair
 
 # --- real excerpt: PERDA_NO_1_TAHUN_2024.txt lines 1221-1231
 JAKARTA_P44_P48 = """
@@ -115,7 +115,37 @@ def check_index_stops_before_penjelasan():
     assert "Cukup jelas" not in idx["1"]["text"]
 
 
-CHECKS = [check_index_basic, check_index_ayat_and_huruf, check_index_stops_before_penjelasan]
+def check_tokenize_paren_and_words():
+    toks = _tokenize("dimaksud dalam Pasal 55 ayat (1) huruf l")
+    assert toks == ["dimaksud", "dalam", "pasal", "55", "ayat", "(1)", "huruf", "l"], toks
+
+
+def check_canon_repairs_real_keyword_typos():
+    # 'ayal' for 'ayat' -- real corruption, Perda Surabaya 7/2023 line 4784
+    assert _canon("ayal") == "ayat"
+    # 'alat' for 'ayat' -- real corruption, UU 1/2022 (Dana Otonomi Khusus clause)
+    assert _canon("alat") == "ayat"
+    # unrelated real word must NOT be coerced
+    assert _canon("pajak") == "pajak"
+
+
+def check_canon_leaves_far_typos_alone():
+    # 'hunrf' for 'huruf' -- real corruption, UU 1/2022 Pasal 55 (edit
+    # distance 2, deliberately past the distance-1 threshold)
+    assert _canon("hunrf") == "hunrf"
+
+
+def check_unparen_repair():
+    # '(l)' -- real corruption, UU 1/2022 Pasal 58(4) and PERDA_NO_1_TAHUN_2024 Pasal 80
+    assert _unparen_repair("(l)") == "1"
+    assert _unparen_repair("(2)") == "2"
+
+
+CHECKS = [
+    check_index_basic, check_index_ayat_and_huruf, check_index_stops_before_penjelasan,
+    check_tokenize_paren_and_words, check_canon_repairs_real_keyword_typos,
+    check_canon_leaves_far_typos_alone, check_unparen_repair,
+]
 
 
 def run():
