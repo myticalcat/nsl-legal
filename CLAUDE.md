@@ -72,6 +72,13 @@ confirmation. Score the builder on statutory recovery only.
   "correct" it to `40%` and destroy provenance.
 - **`bounds` is a list.** UU Pasal 58(2) carries a floor and a ceiling in one
   sentence.
+- **A percentage may exceed 100.** Corrected 2026-09-08: `parse_digits` and
+  `parse_words` rejected anything over 100 as a mangled `%`, which was true of
+  the original four documents and false of the corpus. A tax-inclusive base is
+  divided by `110%` to recover the pre-tax figure (Perwal Jogja 51/2024), and a
+  room-class tariff is capped at `125%` of the class below (Perda Tangerang
+  1/2025). Both channels agree on these; the guard was discarding correct data.
+  `CEILING` is now a backstop against glued digits, not a claim about rates.
 - **`op` matters more than `value`.** UU 58(1) `<= 10%` and Perda 27(1)
   `== 10%` are the same number and compliant precisely because one is a cap.
 - **`is_residual` implements lex specialis.** A general norm is displaced
@@ -114,7 +121,47 @@ reconciled. 100 pairs found, 61 agree, 38 recovered, 1 disagreement.
 The disagreement is Pasal 10(1)(b): `60% (enam persen)`. Both channels are
 internally clean and they contradict. Internal evidence (the 1,2%→2% and
 6%→10% parallel with Pasal 10(2)) says the true value is 6% and the digits
-gained a zero. **Needs confirmation against an official copy.**
+gained a zero. **Resolved 2026-09-08: the page image reads `6% (enam
+persen)`.** The scan's own text layer inserted the zero; the word channel was
+right. Reconciliation cannot repair this class — both channels parse cleanly,
+so `disagree` is the correct terminal verdict and a human reads the page.
+The record stays flagged rather than silently corrected.
+
+**Reading the page image is part of verification, not a last resort.** Text
+agreement is inference about the source; the render is the source. Every
+`disagree` and `unparsed` case below was settled by opening the page, and
+three of the five turned out to be a parser bug rather than a real conflict.
+Route these to a page image, not to a guess.
+
+**Corpus expansion (`data/raw/batch-a|b|c`, 30 usable PDFs, ~5,300 pages).**
+Text-layer survey: 5,132 pages clean, 106 corrupted, 94 empty. Nearly
+everything yields to `pdftotext -layout`, which reproduces the existing
+`data/txt/` files byte-for-byte. Only two documents need real OCR — Perda
+Lhokseumawe 1/2024 (85/85 pages, no text layer at all) and Perda Sibolga
+1/2024 (101/139 pages, broken CMap remapping Latin glyphs into CJK: `恥じAK
+DAERAH` for `PAJAK DAERAH`). Perda Balikpapan 8/2023 is a 0-byte download and
+needs re-fetching. Do not classify pages by dictionary hit-rate: lampiran
+tariff tables and pages of `Cukup jelas.` boilerplate are prose-free but
+perfectly correct, and a stopword-frequency test flags 1,222 pages instead of
+106. Character-script anomaly is the signal that actually separates the two.
+
+Reconciliation across the expanded corpus: 887 pairs, 625 agree, 260
+recovered, 2 disagree, 0 unparsed.
+
+**Glyph confusion is not scan-exclusive.** `6O%` (letter O for zero) appears
+in Perda Mojokerto 7/2023 at page 67 — a born-digital, BSrE-signed document
+that was never scanned, apparently copied from the identical illustrative
+passage in PP 35/2023. So the two-channel check earns its keep on clean
+digital sources too, and "this PDF is not a scan" is not a reason to skip it.
+
+**A drafting defect inside one provision.** Perwal Jogja 51/2024 Pasal 198(4)
+reads `67% (enam puluh persen)` in the enacted, digitally-signed text. Both
+channels extracted it faithfully; the provision contradicts itself. Ayat (3)
+directly above sets 30% for a rejected *keberatan*, and the national scheme
+pairs 30% objection with 60% appeal, so the words are right and `67` is the
+typo. This is a distinct conflict class from panti pijat — numeral-level,
+intra-provision, and found without any cross-instrument reasoning. Left as
+`disagree`; do not auto-repair it.
 
 **A candidate real conflict.** UU Pasal 55(1) lists `panti pijat dan pijat
 refleksi` at huruf k, separately from `diskotek, karaoke, kelab malam, bar,
@@ -164,7 +211,8 @@ mechanism just flags everything it touches.
 
 ## Corpus notes
 
-- UU 1/2022 (national, scanned, noisy) — the only OCR-damaged source.
+- UU 1/2022 (national, scanned, noisy) — the noisiest source of the original
+  four, but no longer the only damaged one; see the batch corpus below.
 - Perda DKI Jakarta 1/2024 — DKI levies both province and city taxes, so it is
   the most productive single document.
 - Perda Jawa Barat 9/2023 — 628 pages, mostly lampiran. Strip appendices.
@@ -172,6 +220,18 @@ mechanism just flags everything it touches.
 
 Province and city levy **disjoint** tax types under HKPD. Jabar and Surabaya
 are never comparable to each other. Pairing must be tier-aware.
+
+`data/raw/batch-a|b|c` holds 30 further PDFs (31 files; Balikpapan 8/2023 is
+0 bytes and must be re-downloaded). Two are national — UU 1/2022 and PP
+35/2023, the latter carrying the implementing detail the UU delegates. The
+rest are city-level Perda plus Perwal/Perwali implementing regulations across
+~25 kota. Two useful properties: batch-b gives Surabaya at four instrument
+levels, which lets intra-city delegation chains be tested without crossing
+tiers, and PP 35/2023's penjelasan examples are copied nearly verbatim into
+several Perda, so the same provision text recurs across instruments with
+independent typos. Note the Perwal/Perwali tier is not in the HKPD pairing
+model yet — a Perwal implements its own city's Perda, so it is a third rung,
+not a peer of the Perda.
 
 ## Conventions
 

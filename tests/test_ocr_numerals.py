@@ -53,6 +53,21 @@ CASES = [
     ("b. 10%", "sepuluh persen",                         0.10),
     ("i 75%",  "tujuh puluh lima persen",                0.75),
 
+    # --- corrupted zero in front of an intact '%'
+    # The 'o%' branch of PCT_TAIL used to consume the 'O' as part of a
+    # corrupted percent sign, so the digit never reached GLYPH: '1O%' came
+    # back as 1% and '6O%' as 6%, and only the word channel disagreeing
+    # exposed it. Verified against the page images.
+    ("1O%",    "sepuluh persen",                         0.10),   # PP 35/2023 Pasal 25(1)
+    ("6O%",    "enam puluh persen",                      0.60),   # PP 35/2023 penjelasan; same string in Perda Mojokerto 7/2023, born-digital
+
+    # --- rates above 100% are legitimate, not corruption
+    # A tax-inclusive base is divided by 110% to recover the pre-tax figure;
+    # a room-class tariff is capped at 125% of the class below. Both channels
+    # agree on these, and the old ceiling of 100 discarded them as unparsed.
+    ("110%",   "seratus sepuluh persen",                 1.10),   # Perwal Jogja 51/2024
+    ("125%",   "seratus dua puluh lima persen",          1.25),   # Perda Tangerang 1/2025
+
     # --- clean baseline
     ("10%",    "sepuluh persen",                         0.10),
     ("30,5%",  "tiga puluh koma lima persen",            0.305),

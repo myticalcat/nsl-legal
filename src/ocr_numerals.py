@@ -17,8 +17,24 @@ import unicodedata
 # Glyph confusions observed in UU 1/2022 (Canon scan, Helvetica text layer).
 GLYPH = str.maketrans({"l": "1", "I": "1", "O": "0", "o": "0", "S": "5", "B": "8"})
 
+# Values above 100 are legitimate: a tax-inclusive base is divided by 110% to
+# recover the pre-tax figure (Perwal Jogja 51/2024), and a room-class tariff is
+# capped at 125% of the class below it (Perda Tangerang 1/2025). The bound is
+# only here to catch a mangled '%' that left its digits glued to the number --
+# '2070%' is 20%, not 2070% -- which inflates by roughly 100x, so anything in
+# the plausible-rate range still fails it. Raise it if a real rate exceeds it;
+# the highest yet observed is 125%.
+CEILING = 300
+
 # The percent sign degrades into a family of look-alikes.
-PCT_TAIL = re.compile(r"(?:%|Vo|Yo|o/o|7o|o%|%o|Zo)\s*$", re.IGNORECASE)
+#
+# 'o%' is deliberately absent. It is indistinguishable from a corrupted zero
+# ('O' for '0') sitting in front of an intact '%', and the alternation would
+# match it two characters from the right, stripping the digit before GLYPH
+# could repair it -- '1O%' parsed as 1%, '6O%' as 6%. Real occurrences in
+# PP 35/2023 and Perda Mojokerto 7/2023 are corrupted zeroes, not corrupted
+# percent signs, so the bare '%' branch must win and leave the 'O' in the body.
+PCT_TAIL = re.compile(r"(?:%|Vo|Yo|o/o|7o|%o|Zo)\s*$", re.IGNORECASE)
 
 
 def parse_digits(raw):
@@ -32,12 +48,11 @@ def parse_digits(raw):
     if body == s:
         return None, False
     repaired = body.translate(GLYPH).replace(",", ".").replace(" ", "")
-    # a stray trailing 0 from a mangled '%' -- '2070' is 20%, not 2070%
     m = re.fullmatch(r"(\d+(?:\.\d+)?)", repaired)
     if not m:
         return None, False
     val = float(m.group(1))
-    if val > 100:
+    if val > CEILING:
         return None, True
     return val / 100.0, repaired != body
 
@@ -164,7 +179,7 @@ def parse_words(raw):
     else:
         val = float(_int_from(toks))
 
-    if val > 100:
+    if val > CEILING:
         return None, repaired
     return val / 100.0, repaired
 
