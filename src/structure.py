@@ -26,9 +26,12 @@ Three properties this module holds and `crossref.build_index` does not:
 """
 
 import collections
+import json
 import re
+from pathlib import Path
 
-from crossref import AYAT_MARKER, PASAL_HEADER
+from crossref import PASAL_HEADER
+from ocr_numerals import GLYPH
 
 # Sub-item markers come in both dotted and parenthesised forms, in comparable
 # volume across the corpus, so both are recognised at both levels.
@@ -86,6 +89,64 @@ def _runs(markers, first, nxt):
     return accepted
 
 
+# An ayat marker is itself scan-damaged often enough to matter: `(2)` comes
+# through as `(21` 94 times in this corpus, the closing paren read as a `1`,
+# and `(5)` as `(s)`. A strict `\(\d+\)` drops those, the ayat is lost, and its
+# parent silently absorbs it. Tolerating the damage is only safe because a run
+# has to open at 1 and advance by one, so a wrong reading cannot survive: `(21`
+# is ayat 21 after ayat 20 and ayat 2 after ayat 1, and continuity decides
+# which without guessing from the glyph.
+AYAT_MARKER_LOOSE = re.compile(r"(?m)^[ \t]*\(([0-9lIOoSB]{1,3})([)1lI\]}])?[ \t]+")
+
+
+def _number_readings(body, closer):
+    """Readings of a marker's number, most literal first.
+
+    `('21', None)` -> [21, 2], because an absent closing paren means the last
+    character may be the paren itself. `('s', ')')` -> [5] by glyph repair.
+    """
+    out = []
+    repaired = body.translate(GLYPH)
+    if repaired.isdigit():
+        out.append(int(repaired))
+        # No closing bracket survived, so the final character may have been it.
+        if closer is None and len(repaired) > 1:
+            out.append(int(repaired[:-1]))
+    return out
+
+
+def _numeric_runs(markers):
+    """Accept markers forming runs 1, 2, 3 ..., choosing among readings.
+
+    A run of one is accepted only when its reading needed no repair. Without
+    that, a stray `(l)` from the parenthesised-letter level would read as `1`
+    and open an ayat that does not exist.
+    """
+    accepted, run = [], []
+
+    def flush():
+        if len(run) > 1 or (run and run[0][2]):
+            accepted.extend((m, str(v)) for m, v, _ in run)
+        run.clear()
+
+    for m in markers:
+        body, closer = m.group(1), m.group(2)
+        readings = _number_readings(body, closer)
+        if not readings:
+            continue
+        literal = readings[0] == int(body) if body.isdigit() else False
+        expected = int(run[-1][1]) + 1 if run else None
+
+        if expected is not None and expected in readings:
+            run.append((m, expected, literal))
+            continue
+        flush()
+        if 1 in readings:
+            run.append((m, 1, literal))
+    flush()
+    return accepted
+
+
 def _spans(accepted, text, limit):
     """Turn accepted markers into (label, body_start, body_end) spans."""
     out = []
@@ -135,8 +196,7 @@ def _parse_huruf(text, offset, citation):
 
 
 def _parse_ayat(text, offset, citation):
-    markers = list(AYAT_MARKER.finditer(text))
-    accepted = _runs(markers, "1", _next_number)
+    accepted = _numeric_runs(list(AYAT_MARKER_LOOSE.finditer(text)))
     out = []
     for label, start, end, body in _spans(accepted, text, len(text)):
         cite = f"{citation} ayat ({label})"
@@ -537,16 +597,63 @@ def segment_document(record):
     }
 
 
+def verify_gold(out_dir, gold_path=Path("data/gold/norms.json")):
+    """Check every hand-annotated citation resolves to exactly one unit.
+
+    The gold fixture is the only independent statement of what a citation
+    should address, so this is the one check that is not the segmenter
+    agreeing with itself. Read-only: `data/gold/` is frozen.
+    """
+    gold = json.loads(Path(gold_path).read_text())
+    instruments = gold.get("instruments", {})
+    lookup = {}
+    for inst in {n["instrument"] for n in gold["norms"]}:
+        doc_id = instruments.get(inst, {}).get("doc_id") or GOLD_DOC_IDS.get(inst)
+        path = out_dir / f"{doc_id}.json"
+        if not doc_id or not path.exists():
+            print(f"  ?       {inst}: no segmented document ({doc_id})")
+            continue
+        for cite, text in iter_units(json.loads(path.read_text())):
+            lookup.setdefault((inst, cite), []).append(text)
+
+    resolved = ambiguous = 0
+    for n in gold["norms"]:
+        hits = lookup.get((n["instrument"], n["citation"]), [])
+        if len(hits) == 1:
+            resolved += 1
+            print(f"  ok      {n['id']:<10} {n['citation']}")
+        elif hits:
+            ambiguous += 1
+            print(f"  AMBIG   {n['id']:<10} {n['citation']}  resolves {len(hits)} ways")
+        else:
+            print(f"  MISSING {n['id']:<10} {n['citation']}")
+    total = len(gold["norms"])
+    print(f"\n{resolved}/{total} gold citations resolve to exactly one unit"
+          + (f", {ambiguous} ambiguous" if ambiguous else ""))
+    return resolved == total
+
+
+# The gold fixture names instruments by short code; map them to document ids
+# for the two instruments it currently covers.
+GOLD_DOC_IDS = {
+    "UU_1_2022": "UU_Nomor_1_Tahun_2022",
+    "PERDA_SBY_7_2023": "Perda_Surabaya_7_th_2023",
+}
+
+
 def main():
     import argparse
-    import json
-    from pathlib import Path
 
     parser = argparse.ArgumentParser(description="Segment the extracted corpus.")
+    parser.add_argument("--verify-gold", action="store_true",
+                        help="check gold citations resolve, then exit")
     parser.add_argument("--in-dir", type=Path, default=Path("data/extracted"))
     parser.add_argument("--out-dir", type=Path, default=Path("data/structured"))
     parser.add_argument("--filter", help="only process doc_ids containing this")
     args = parser.parse_args()
+
+    if args.verify_gold:
+        return 0 if verify_gold(args.out_dir) else 1
 
     args.out_dir.mkdir(parents=True, exist_ok=True)
     totals = {"pasal": 0, "ayat": 0, "huruf": 0, "angka": 0, "units": 0}

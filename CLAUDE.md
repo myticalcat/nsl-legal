@@ -20,7 +20,7 @@ accuracy be measured separately. **Do not move logic into the LLM stage.**
 |---|---|
 | `src/ocr_numerals.py` | working, tested against real scanned text |
 | `src/extract_text.py` | working, run over all 34 raw PDFs |
-| `src/structure.py` | working, 6,411 pasal segmented, 16 tests |
+| `src/structure.py` | working, 6,411 pasal, 8/8 gold citations resolve |
 | `src/slotting.py` | working, demo only, not wired to an API |
 | `src/detect.py` | working, 21 categories, 2 conflicts found |
 | `data/gold/norms.json` | **hand-written fixture**, 8 norms |
@@ -154,6 +154,9 @@ confirmation. Score the builder on statutory recovery only.
   Detect corruption by character-script anomaly, never by dictionary hit-rate —
   tariff tables and `Cukup jelas.` pages are prose-free and correct, and a
   stopword test flags ~1,200 of them against ~100 real failures.
+  Strip page furniture before segmenting, and verify against the gold
+  fixture after: `src/structure.py --verify-gold` is the only check that is
+  not the segmenter agreeing with itself.
   Caveat on OCR'd pages: tesseract does not preserve reading order the way
   `pdftotext -layout` does. Marginal labels (`Menimbang`, `Mengingat`) migrate
   to the top of the page, so pasal segmentation over an OCR'd page cannot
@@ -220,8 +223,8 @@ typo. This is a distinct conflict class from panti pijat — numeral-level,
 intra-provision, and found without any cross-instrument reasoning. Left as
 `disagree`; do not auto-repair it.
 
-**Structure, as segmented (`data/structured/`).** 6,411 pasal, 8,637 ayat,
-9,475 huruf, 2,888 angka, 22,539 addressable units, 94 warnings. The pasal
+**Structure, as segmented (`data/structured/`).** 6,411 pasal, 9,053 ayat,
+9,481 huruf, 2,889 angka, 22,915 addressable units, 80 warnings. The pasal
 count equals the raw `^Pasal N$` marker count exactly, so nothing is dropped.
 
 Page furniture is stripped before segmenting, and it mattered more than
@@ -238,23 +241,37 @@ exists.
 Citations are qualified by section and occurrence, because `Pasal 32` (a 25%
 reklame rate in Perda Tangerang Selatan 10/2023) and `Penjelasan Pasal 32`
 (`Cukup jelas.`) are different provisions. That plus furniture stripping took
-colliding citations from 1,328 to 548 (6.0% to 2.43%).
+colliding citations from 1,328 to 510 (6.0% to 2.23%).
 
-The remaining 548 are flagged, not hidden: 87 warnings report a container
-holding more than one list opening, which *proves* a parent marker was missed.
-Two known causes, both worth fixing before a citation can be a primary key:
+Ayat markers are read tolerantly, because they are scan-damaged too: `(2)`
+arrives as `(21` 94 times, the closing paren read as a `1`, and `(5)` as `(s)`.
+A strict `\(\d+\)` drops those, the ayat is lost, and its parent absorbs it.
+Tolerance is safe only because runs are validated -- `(21` is ayat 21 after
+ayat 20 and ayat 2 after ayat 1, and continuity decides, never the glyph. A
+run of one is accepted only when it needed no repair. This recovered 416 ayat
+(8,637 to 9,053) and fixed PP 35/2023 Pasal 3, which had collapsed four ayat
+of tax types into one.
 
-  Ayat markers are themselves scan-damaged. `(2)` appears as `(21` 94 times --
-  the closing paren read as a `1` -- and `(5)` as `(s)`, the same glyph family
-  as `Pasal 7O`. `AYAT_MARKER` is strict and rejects them, so the ayat is lost
-  and its parent over-extends. `crossref.py` already has the tolerant
-  machinery (`GLYPH`, `_unparen_repair`, `_lev`) to fix this.
+`python3 src/structure.py --verify-gold` checks the segmentation against the
+hand-annotated fixture: all 8 gold citations resolve to exactly one unit each.
+This is the only check here that is not the segmenter agreeing with itself, so
+run it after touching this module.
 
-  There is a fifth nesting level this module does not model: parenthesised
-  letters `(a)`, `(b)`, `(c)` below angka, used in tariff detail lists, about
-  1,100 occurrences. `(l)` is ambiguous between that level and a damaged `(1)`
-  and should be resolved the same way `Pasal 7O` is -- by run continuity, not
-  by the glyph.
+**Do not add a parenthesised-letter level.** `(a)`, `(b)`, `(c)` look like a
+missing fifth level, but 1,375 of their 1,406 occurrences are inside lampiran
+tariff tables, and all 31 in operative text are `(l)` -- a scan-damaged `(1)`,
+not a letter at all. Measured before building; there is nothing to build.
+
+The remaining 510 collisions (2.23%) are flagged, not hidden: 73 warnings
+report a container holding more than one list opening, which proves a parent
+marker was missed. Known residue:
+
+  Running headers survive when OCR spells them differently on each page --
+  `PRESIOEN`, `REPIJBLIK`, `REPLIBLIK`, `]NOONESIA` -- so no single variant
+  clears the repeat threshold. About 75 leaks, all in enacting and closing
+  boilerplate rather than rate provisions, e.g. `Agar REPUBLIK ]NOONESIA Agar
+  setiap orang mengetahuinya` in UU 1/2022 Pasal 193. Fuzzy clustering of edge
+  lines would fix it; the payoff is small.
 
   `PASAL_HEADER` requires `Pasal N` alone on a line, so the ~492 inline
   `Pasal N <text>` forms are not headers. Right for operative text, wrong for
