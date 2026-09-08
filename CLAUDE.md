@@ -19,6 +19,7 @@ accuracy be measured separately. **Do not move logic into the LLM stage.**
 | Component | State |
 |---|---|
 | `src/ocr_numerals.py` | working, tested against real scanned text |
+| `src/extract_text.py` | working, run over all 34 raw PDFs |
 | `src/slotting.py` | working, demo only, not wired to an API |
 | `src/detect.py` | working, 21 categories, 2 conflicts found |
 | `data/gold/norms.json` | **hand-written fixture**, 8 norms |
@@ -46,6 +47,15 @@ them. Evaluation compares `out/` against `data/gold/`. If a pipeline stage
 writes into `data/gold/`, the ground truth is destroyed and the comparison
 silently becomes "does the extractor agree with itself", which always passes.
 
+`data/extracted/` is also regenerated, despite living under `data/` — it is
+derived from `data/raw/` by `src/extract_text.py` and can be rebuilt at any
+time. It sits under `data/` because it is corpus input to the pipeline, not an
+artefact scored against gold. Nothing in `data/` except `data/gold/` is frozen.
+
+Both `data/raw/` and `data/extracted/` are gitignored, so a fresh clone has
+neither the PDFs nor the extracted text. Run `python3 src/extract_text.py`
+after restoring `data/raw/` to rebuild it (~10 min, most of it OCR).
+
 The ontology is a special case: it legitimately grows, because each new Perda
 introduces local subdivisions (`karaoke_keluarga`) absent from earlier
 documents. Split it — the twelve statutory categories from UU Pasal 55 are
@@ -55,7 +65,9 @@ confirmation. Score the builder on statutory recovery only.
 ## Layout
 
     src/                  pipeline modules
-    data/txt/             pdftotext -layout output for all four documents
+    data/raw/             source PDFs, batch-a|b|c
+    data/txt/             pdftotext -layout output for the original four documents
+    data/extracted/       src/extract_text.py output, one JSON per PDF
     data/gold/            frozen hand-annotated ground truth
     prompts/              extraction prompt with real few-shot examples
     schema/schema.md      IR field documentation, each field justified by a provision
@@ -110,6 +122,16 @@ confirmation. Score the builder on statutory recovery only.
 - **Schema does not self-modify.** Unrepresentable provisions go to a coverage
   log with a reason code. The ontology may grow, but new subsumption edges land
   in `pending_review` before going live.
+- **Text extraction records its own method, per page.** `text_layer` and `ocr`
+  pages do not warrant equal trust and must stay distinguishable downstream; a
+  page whose corrupted text layer was replaced also keeps the discarded string.
+  Detect corruption by character-script anomaly, never by dictionary hit-rate —
+  tariff tables and `Cukup jelas.` pages are prose-free and correct, and a
+  stopword test flags ~1,200 of them against ~100 real failures.
+  Caveat on OCR'd pages: tesseract does not preserve reading order the way
+  `pdftotext -layout` does. Marginal labels (`Menimbang`, `Mengingat`) migrate
+  to the top of the page, so pasal segmentation over an OCR'd page cannot
+  assume source order. Character accuracy is good; sequence is not.
 
 ## Findings so far
 
@@ -133,7 +155,7 @@ agreement is inference about the source; the render is the source. Every
 three of the five turned out to be a parser bug rather than a real conflict.
 Route these to a page image, not to a guess.
 
-**Corpus expansion (`data/raw/batch-a|b|c`, 30 usable PDFs, ~5,300 pages).**
+**Corpus expansion (`data/raw/batch-a|b|c`, 34 usable PDFs, 5,332 pages).**
 Text-layer survey: 5,132 pages clean, 106 corrupted, 94 empty. Nearly
 everything yields to `pdftotext -layout`, which reproduces the existing
 `data/txt/` files byte-for-byte. Only two documents need real OCR — Perda
@@ -145,8 +167,17 @@ tariff tables and pages of `Cukup jelas.` boilerplate are prose-free but
 perfectly correct, and a stopword-frequency test flags 1,222 pages instead of
 106. Character-script anomaly is the signal that actually separates the two.
 
-Reconciliation across the expanded corpus: 887 pairs, 625 agree, 260
-recovered, 2 disagree, 0 unparsed.
+Reconciliation over `data/extracted/`: 923 pairs, 657 agree, 264 recovered,
+2 disagree, 0 unparsed. The two disagreements are the real ones below; every
+other pair reconciles. OCR recovered numerals that did not previously exist as
+text at all — Lhokseumawe went from 0 pairs to 30, Sibolga from 26 garbage-
+derived pairs to 32 clean ones — and the OCR'd documents produced no
+disagreements, which is decent evidence the OCR is sound on the values that
+matter. Note why cross-channel agreement still means something on an OCR'd
+page: the two channels are different encodings in different parts of the line
+(digits vs. spelled-out words), so one engine misreading `60` as `80` would not
+also turn `enam puluh` into `delapan puluh`. The independence is in the source,
+not the reader.
 
 **Glyph confusion is not scan-exclusive.** `6O%` (letter O for zero) appears
 in Perda Mojokerto 7/2023 at page 67 — a born-digital, BSrE-signed document
@@ -221,8 +252,19 @@ mechanism just flags everything it touches.
 Province and city levy **disjoint** tax types under HKPD. Jabar and Surabaya
 are never comparable to each other. Pairing must be tier-aware.
 
-`data/raw/batch-a|b|c` holds 30 further PDFs (31 files; Balikpapan 8/2023 is
-0 bytes and must be re-downloaded). Two are national — UU 1/2022 and PP
+**Instrument names are not uniform — do not key patterns on `Perda` or
+`Daerah`.** Lhokseumawe 1/2024 is an Aceh **Qanun**, and its enacting clause
+reads `QANUN KOTA LHOKSEUMAWE TENTANG PAJAK KOTA DAN RETRIBUSI KOTA` — `Pajak
+Kota` and `Retribusi Kota` where every other document in the corpus says
+`Pajak Daerah` and `Retribusi Daerah`. A matcher looking for the Perda wording
+silently skips the whole document. The Perwal/Perwali tier varies in spelling
+too (`Perwal`, `Perwali`, `Peraturan Walikota`, `Peraturan Wali Kota`).
+
+`data/raw/batch-a|b|c` holds 34 usable PDFs (35 files; Balikpapan 8/2023 is
+0 bytes and must be re-downloaded). Two duplicate originals — UU 1/2022 and
+Perda Surabaya 7/2023 — extract byte-identically to their `data/txt/` copies,
+so 32 instruments are new. The other two originals (DKI Jakarta 1/2024, Jabar
+9/2023) are not in `data/raw/` at all and still come only from `data/txt/`. Two are national — UU 1/2022 and PP
 35/2023, the latter carrying the implementing detail the UU delegates. The
 rest are city-level Perda plus Perwal/Perwali implementing regulations across
 ~25 kota. Two useful properties: batch-b gives Surabaya at four instrument
