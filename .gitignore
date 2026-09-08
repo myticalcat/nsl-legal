@@ -4,3 +4,4 @@ __pycache__/
 out/
 data/raw/
 data/extracted/
+data/structured/

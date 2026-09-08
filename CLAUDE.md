@@ -20,6 +20,7 @@ accuracy be measured separately. **Do not move logic into the LLM stage.**
 |---|---|
 | `src/ocr_numerals.py` | working, tested against real scanned text |
 | `src/extract_text.py` | working, run over all 34 raw PDFs |
+| `src/structure.py` | working, 6,411 pasal segmented, 16 tests |
 | `src/slotting.py` | working, demo only, not wired to an API |
 | `src/detect.py` | working, 21 categories, 2 conflicts found |
 | `data/gold/norms.json` | **hand-written fixture**, 8 norms |
@@ -52,9 +53,10 @@ derived from `data/raw/` by `src/extract_text.py` and can be rebuilt at any
 time. It sits under `data/` because it is corpus input to the pipeline, not an
 artefact scored against gold. Nothing in `data/` except `data/gold/` is frozen.
 
-Both `data/raw/` and `data/extracted/` are gitignored, so a fresh clone has
-neither the PDFs nor the extracted text. Run `python3 src/extract_text.py`
-after restoring `data/raw/` to rebuild it (~10 min, most of it OCR).
+`data/raw/`, `data/extracted/` and `data/structured/` are all gitignored, so a
+fresh clone has none of them. After restoring `data/raw/`, run
+`python3 src/extract_text.py` (~10 min, most of it OCR) then
+`python3 src/structure.py` (seconds).
 
 The ontology is a special case: it legitimately grows, because each new Perda
 introduces local subdivisions (`karaoke_keluarga`) absent from earlier
@@ -68,6 +70,7 @@ confirmation. Score the builder on statutory recovery only.
     data/raw/             source PDFs, batch-a|b|c
     data/txt/             pdftotext -layout output for the original four documents
     data/extracted/       src/extract_text.py output, one JSON per PDF
+    data/structured/      src/structure.py output, pasal/ayat/huruf/angka tree
     data/gold/            frozen hand-annotated ground truth
     prompts/              extraction prompt with real few-shot examples
     schema/schema.md      IR field documentation, each field justified by a provision
@@ -122,6 +125,29 @@ confirmation. Score the builder on statutory recovery only.
 - **Schema does not self-modify.** Unrepresentable provisions go to a coverage
   log with a reason code. The ontology may grow, but new subsumption edges land
   in `pending_review` before going live.
+- **Structure is segmented deterministically, and it is a list.** Pasal
+  occurrences are never keyed by number: an instrument states `Pasal 1` in its
+  operative text and again in its penjelasan, and `crossref.build_index` keys
+  by number, so it silently drops one -- 94 of 232 pasal in Perda Sibolga
+  1/2024, 74 of 181 in Lubuk Linggau. `src/structure.py` records duplicates
+  with an occurrence index and a warning. Three rules earn their keep:
+  sections come from *pasal-numbering restart*, not heading text, because
+  `PENJELASAN` does not survive OCR in those same two documents; a sub-item
+  list is accepted only as a *validated run* opening at `a` or `1`; and a
+  `LAMPIRAN` heading always ends a pasal, because a lampiran has no pasal of
+  its own and its tariff rows otherwise nest inside the pasal above it. That
+  last rule alone cut spurious units from 40,404 to 22,315 and colliding
+  citations from 35% to 6%, with the pasal count unchanged at 6,411.
+- **A backwards jump in pasal numbering is not automatically a new section.**
+  Section restarts in this corpus drop by 122 or more; genuine drafting
+  defects drop by 2. Perda Bau-Bau 1/2024 numbers 18, 19, 20 and then numbers
+  18, 19, 20 again under `Bagian Keempat PBJT`; Perda Pekalongan 8/2023 goes
+  176 to 174. Those are the document's defects and are reported, not smoothed.
+- **The O-for-zero corruption reaches pasal numbers, not just rates.** PP
+  35/2023 renders article 70 as `Pasal 7O`, which reads as a jump from 69 back
+  to 7 and split that document into nine sections. Repair the suffix to a
+  digit only when it restores an ascending sequence -- never by glyph alone,
+  because `Pasal 12A` is a real amendment insertion and `B` would become 8.
 - **Text extraction records its own method, per page.** `text_layer` and `ocr`
   pages do not warrant equal trust and must stay distinguishable downstream; a
   page whose corrupted text layer was replaced also keeps the discarded string.
@@ -194,6 +220,53 @@ typo. This is a distinct conflict class from panti pijat — numeral-level,
 intra-provision, and found without any cross-instrument reasoning. Left as
 `disagree`; do not auto-repair it.
 
+**Structure, as segmented (`data/structured/`).** 6,411 pasal, 8,637 ayat,
+9,475 huruf, 2,888 angka, 22,539 addressable units, 94 warnings. The pasal
+count equals the raw `^Pasal N$` marker count exactly, so nothing is dropped.
+
+Page furniture is stripped before segmenting, and it mattered more than
+expected: a catchword, stamp and running header at a page break push the
+following `(2)` off the line start, so the preceding ayat absorbs its siblings
+and their `a./b./c.` lists collapse into one citation. Removing it recovered
+125 previously-swallowed ayat. Identify furniture by *position*, never by
+wording or frequency alone: `PRESIDEN` occurs 102 times in PP 35/2023 and every
+one is a page's first line, while `Cukup jelas.` occurs 245 times mid-page and
+is real text. The rule is "recurs at the page edges and never once in the
+middle", with the edge zone shrinking on a short page so a middle always
+exists.
+
+Citations are qualified by section and occurrence, because `Pasal 32` (a 25%
+reklame rate in Perda Tangerang Selatan 10/2023) and `Penjelasan Pasal 32`
+(`Cukup jelas.`) are different provisions. That plus furniture stripping took
+colliding citations from 1,328 to 548 (6.0% to 2.43%).
+
+The remaining 548 are flagged, not hidden: 87 warnings report a container
+holding more than one list opening, which *proves* a parent marker was missed.
+Two known causes, both worth fixing before a citation can be a primary key:
+
+  Ayat markers are themselves scan-damaged. `(2)` appears as `(21` 94 times --
+  the closing paren read as a `1` -- and `(5)` as `(s)`, the same glyph family
+  as `Pasal 7O`. `AYAT_MARKER` is strict and rejects them, so the ayat is lost
+  and its parent over-extends. `crossref.py` already has the tolerant
+  machinery (`GLYPH`, `_unparen_repair`, `_lev`) to fix this.
+
+  There is a fifth nesting level this module does not model: parenthesised
+  letters `(a)`, `(b)`, `(c)` below angka, used in tariff detail lists, about
+  1,100 occurrences. `(l)` is ambiguous between that level and a damaged `(1)`
+  and should be resolved the same way `Pasal 7O` is -- by run continuity, not
+  by the glyph.
+
+  `PASAL_HEADER` requires `Pasal N` alone on a line, so the ~492 inline
+  `Pasal N <text>` forms are not headers. Right for operative text, wrong for
+  the penjelasan, where `Pasal 22 Cukup jelas.` sits on one line -- which is
+  why Kupang's penjelasan appears to start at Pasal 22 and Cilegon's at Pasal 2
+  (its `Pasal 1` was scanned as `Pass} 1`). The penjelasan is non-normative, so
+  this has not been chased. Do not widen the regex without care: it would start
+  matching citations mid-sentence.
+
+  401 of 6,411 pasal touch at least one OCR'd page and carry the reading-order
+  caveat. `extraction_methods` on each pasal says which.
+
 **A candidate real conflict.** UU Pasal 55(1) lists `panti pijat dan pijat
 refleksi` at huruf k, separately from `diskotek, karaoke, kelab malam, bar,
 mandi uap/spa` at huruf l. Pasal 58(2)'s 40–75% band applies only to the
@@ -228,7 +301,12 @@ mechanism just flags everything it touches.
    statutory categories currently in the gold fixture.
 2. **Cross-reference resolution** (`sebagaimana dimaksud pada ayat (1)`).
    Survey the distinct reference forms and their counts before building the
-   resolver.
+   resolver. First fix `crossref.build_index`: it keys pasal by number and so
+   loses 94 of 232 in Sibolga and 74 of 181 in Lubuk Linggau, which means
+   `resolve_references` today can resolve a citation to penjelasan text
+   instead of the operative pasal. `src/structure.py` already produces the
+   correct segmentation; point the resolver at that rather than fixing the
+   same problem twice.
 3. **Extraction runner.** Prompt → API → validate → repair (two attempts, then
    human queue). Test on UU Pasal 58 first, since gold exists for it.
 4. JSON Schema file + validation on load.
