@@ -82,6 +82,97 @@ ATOMIC = [
 ]
 
 
+# Durations, from real provisions. The unit sits outside the parenthetical
+# here, which is why these need their own channel.
+DURATIONS = [
+    ("12", "dua belas",   "bulan",        12, "bulan"),
+    ("3",  "tiga",        "hari kerja",    3, "hari_kerja"),
+    ("30", "tiga puluh",  "hari",         30, "hari"),
+    ("15", "lima belas",  "hari kalender", 15, "hari_kalender"),
+    ("5",  "lima",        "tahun",         5, "tahun"),
+    ("24", "dua puluh empat", "bulan",    24, "bulan"),
+    # glyph damage reaches a deadline's digits the same way it reaches a rate's
+    ("l2", "dua belas",   "bulan",        12, "bulan"),
+    ("6O", "enam puluh",  "tahun",        60, "tahun"),
+]
+
+
+def run_durations():
+    from ocr_numerals import recover_duration
+    fails = []
+    for numeral, words, unit, expected, expected_unit in DURATIONS:
+        r = recover_duration(numeral, words, unit)
+        if r["value"] != expected or r["unit"] != expected_unit:
+            fails.append((numeral, words, unit, expected, r["value"], r["unit"]))
+    print(f"durations: {len(DURATIONS) - len(fails)}/{len(DURATIONS)} passed")
+    for n, w, u, e, g, gu in fails:
+        print(f"  FAIL  {n} ({w}) {u}: expected {e} {u}, got {g} {gu}")
+    return len(fails)
+
+
+def run_invariants():
+    """Properties that are not table-driven."""
+    from ocr_numerals import (PAIR_DURATION, _snap, parse_words,
+                              parse_words_count, scan)
+    fails = []
+
+    def check(name, cond):
+        print(f"  {'ok  ' if cond else 'FAIL'}  {name}")
+        if not cond:
+            fails.append(name)
+
+    # `liga` is one edit from both `lima` (5) and `tiga` (3). Repairing it is a
+    # guess, and picking by set-iteration order made the guess depend on
+    # PYTHONHASHSEED -- 0.05 on some runs, 0.03 on others.
+    check("ambiguous repair refuses rather than guessing",
+          _snap("liga") == (None, True) and parse_words("liga persen")[0] is None)
+    check("unambiguous repair still works",
+          _snap("empal") == ("empat", True))
+    # `_int_from` skips tokens it does not know, so an unresolvable word must
+    # fail the parse rather than drop out of the fold.
+    check("unresolvable word does not silently drop",
+          parse_words("empat zzzzzz persen")[0] is None)
+
+    # The two shapes must not compete for the same text.
+    check("a percentage is not read as a duration",
+          PAIR_DURATION.search("sebesar 10% (sepuluh persen)") is None)
+    check("hari kalender is not folded into hari",
+          PAIR_DURATION.search("15 (lima belas) hari kalender").group(3).lower()
+          == "hari kalender")
+    check("a duration parenthetical with koma is refused",
+          parse_words_count("satu koma lima") is None or
+          parse_words_count("satu koma lima")[0] is None)
+
+    # Perda Kupang 1/2024 lampiran: a tariff column between a number and the
+    # parenthetical of the next line. Without a left anchor the digit class
+    # started inside `1,500,000` and paired `000` with `lima`.
+    check("a lampiran tariff column does not bleed into a duration",
+          PAIR_DURATION.search(
+              "               1,500,000\n         selama 5 (lima) hari"
+          ).group(1).strip() == "5")
+    # With re.IGNORECASE the `I` of the digit class matched the lowercase `i`
+    # of the preceding word, capturing `i 12` and killing the digit channel on
+    # 51 pairs -- a silent loss of half the redundancy, not a wrong value.
+    m = PAIR_DURATION.search("berlaku lagi 12 (dua belas) bulan")
+    check("a preceding lowercase i is not swallowed as a digit",
+          m is not None and m.group(1).strip() == "12")
+    # Both gaps wrap in the real corpus and both must survive.
+    check("line break before the parenthetical",
+          PAIR_DURATION.search("7\n      (tujuh) Hari") is not None)
+    check("line break before the unit",
+          PAIR_DURATION.search("24 (dua puluh empat)\n      bulan") is not None)
+
+    # Reading order, so slot ids follow the page.
+    hits = scan("paling lama 3 (tiga) bulan dan tarif 10% (sepuluh persen) "
+                "serta 5 (lima) hari kerja")
+    check("both channels found in one pass", len(hits) == 3)
+    check("returned in reading order",
+          [h["start"] for h in hits] == sorted(h["start"] for h in hits))
+    check("units carried through",
+          [h["unit"] for h in hits] == ["bulan", "fraction", "hari_kerja"])
+    return len(fails)
+
+
 def run(cases, label):
     fails = []
     for numeral, words, expected in cases:
@@ -98,5 +189,7 @@ def run(cases, label):
 
 
 if __name__ == "__main__":
-    bad = run(CASES, "recovery") + run(ATOMIC, "atomic se- forms")
+    bad = run(CASES, "recovery") + run(ATOMIC, "atomic se- forms") + run_durations()
+    print("\ninvariants:")
+    bad += run_invariants()
     print("\nall passed" if bad == 0 else f"\n{bad} failing")

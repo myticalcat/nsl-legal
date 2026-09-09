@@ -67,6 +67,18 @@ SPECIAL = {"sepuluh": 10, "sebelas": 11, "seratus": 100, "seribu": 1000}
 STRUCT = {"belas", "puluh", "ratus", "koma", "persen"}
 VOCAB = set(UNITS) | set(SPECIAL) | STRUCT
 
+# Iterated, never just membership-tested. A `set` iterates in string-hash
+# order, which Python randomises per process, so `_snap` and `_segment` picked
+# a different winner between runs: `_snap('liga')` returned `lima` under some
+# PYTHONHASHSEED values and `tiga` under others, silently turning a real corpus
+# string into 5% or 3% depending on the run. Sorted, so a measurement made
+# today reproduces tomorrow.
+VOCAB_ORDER = tuple(sorted(VOCAB))
+
+# What a word is worth, for deciding whether two repair candidates actually
+# disagree. `belas` and `puluh` carry no value of their own.
+WORD_VALUE = {**UNITS, **SPECIAL}
+
 
 def _lev(a, b):
     if abs(len(a) - len(b)) > 2:
@@ -92,7 +104,7 @@ def _segment(tok):
     best = [None] * (n + 1)
     best[0] = []
     for i in range(1, n + 1):
-        for w in VOCAB:
+        for w in VOCAB_ORDER:
             L = len(w)
             if L <= i and best[i - L] is not None and tok[i - L:i] == w:
                 cand = best[i - L] + [w]
@@ -102,15 +114,28 @@ def _segment(tok):
 
 
 def _snap(tok):
-    """Nearest vocabulary word within edit distance 1. 'liga' -> 'tiga'."""
+    """Nearest vocabulary word within edit distance 1, or None if ambiguous.
+
+    `liga` is one edit from both `lima` (5) and `tiga` (3), and the corpus
+    contains it. Nothing inside the token breaks that tie, so repairing it is a
+    guess dressed as recovery -- the same mistake as auto-correcting a
+    `disagree`. Return None instead and let the digit channel or a human
+    decide; `recover` already knows what to do with a channel that did not
+    parse.
+
+    Ties between words of the same value are not ambiguous and resolve
+    normally. Measured: 4 of the 1,924 single-character corruptions of a
+    numeral word are genuinely ambiguous, all of them lima/tiga via `tima`
+    and `liga`.
+    """
     if tok in VOCAB:
         return tok, False
-    best, bd = None, 2
-    for w in VOCAB:
-        d = _lev(tok, w)
-        if d < bd:
-            best, bd = w, d
-    return (best, True) if best else (tok, True)
+    near = [w for w in VOCAB_ORDER if _lev(tok, w) == 1]
+    if not near:
+        return None, True
+    if len({WORD_VALUE.get(w) for w in near}) > 1:
+        return None, True
+    return near[0], True
 
 
 def _normalise_token(tok):
@@ -128,7 +153,7 @@ def _normalise_token(tok):
     if seg:
         return seg, True
     snapped, fixed = _snap(tok)
-    return [snapped], fixed
+    return ([] if snapped is None else [snapped]), fixed
 
 
 def _int_from(tokens):
@@ -155,15 +180,31 @@ def _int_from(tokens):
     return total + cur
 
 
-def parse_words(raw):
-    """'empat puluh persen' -> (0.40, False). Returns (value, was_repaired)."""
+def _vocab_tokens(raw):
+    """Normalise a parenthetical into vocabulary words.
+
+    Returns (tokens, repaired, unresolved). `unresolved` matters because
+    `_int_from` skips any token it does not recognise, so a word that could not
+    be resolved would drop silently out of the fold and yield a confident wrong
+    number -- `empat <noise> persen` as 4. Callers must refuse instead.
+    """
     s = unicodedata.normalize("NFKD", raw.lower())
     s = re.sub(r"[^a-z ]", " ", s)
-    toks, repaired = [], False
+    toks, repaired, unresolved = [], False, False
     for t in s.split():
         pieces, fixed = _normalise_token(t)
         repaired |= fixed
+        if not pieces:
+            unresolved = True
         toks.extend(pieces)
+    return toks, repaired, unresolved
+
+
+def parse_words(raw):
+    """'empat puluh persen' -> (0.40, False). Returns (value, was_repaired)."""
+    toks, repaired, unresolved = _vocab_tokens(raw)
+    if unresolved:
+        return None, repaired
 
     if "persen" not in toks:
         return None, repaired
@@ -182,6 +223,95 @@ def parse_words(raw):
     if val > CEILING:
         return None, repaired
     return val / 100.0, repaired
+
+
+# ------------------------------------------------------- the duration channel
+
+# A deadline writes its figure twice exactly as a rate does, but the shape
+# differs: the unit sits *outside* the parenthetical (`12 (dua belas) bulan`)
+# where a percentage keeps it inside (`10% (sepuluh persen)`). So this needs its
+# own pattern rather than a wider PAIR.
+#
+# There are three day types, not two, and none is converted into another. A
+# working day is not 1/7 of a week and the ratio depends on a calendar of
+# public holidays; unqualified `hari` is conventionally calendar days but that
+# is an interpretive claim, not a fact the parser may assume. Two norms
+# measured in different day types are flagged, never reconciled.
+#
+# Measured over body pasal: 560 bulan, 327 tahun, 157 hari kerja, 50 hari,
+# 8 hari kalender. Order matters -- the longer forms must precede bare `hari`
+# in the alternation or `15 (lima belas) hari kalender` silently becomes a
+# `hari`, which is the normalisation this is here to prevent.
+TIME_UNITS = ("hari kerja", "hari kalender", "hari", "bulan", "tahun")
+_UNIT_ALT = "|".join(u.replace(" ", r"\s+") for u in TIME_UNITS)
+
+# The digit body carries the same glyph confusions as a rate, but there is no
+# percent sign to anchor the right edge -- the closing parenthesis and the unit
+# word do that job instead. Two things this pattern learned the hard way:
+#
+# Case-sensitive, for the same reason PAIR is. Under re.IGNORECASE the `I` in
+# the digit class also matches the lowercase `i` of the preceding word, so
+# `... lagi 12 (dua belas) bulan` captured `i 12`, which no longer parses as an
+# integer. That silently dropped the digit channel on 51 pairs -- not a wrong
+# value, but half the redundancy gone, which is worse because it is invisible.
+# Only the unit alternation is case-folded, inline.
+#
+# Every gap allows a line break, because `pdftotext -layout` wraps a duration
+# at each of them: `7\n   (tujuh) Hari` breaks before the parenthetical and
+# `24 (dua puluh empat)\n   bulan` breaks before the unit. Forbidding newlines
+# was measured and costs 235 of 1,181 real matches -- 113 at the first gap and
+# 122 at the second -- so it is not an option.
+#
+# What actually caused the trouble is the missing left anchor. A percentage has
+# `%` on its right; a duration has nothing, so the digit class happily started
+# mid-number and let a lampiran tariff column bleed across lines:
+# `1,500,000\n     (lima) hari` matched as the digits `000` against the words
+# `lima`. The lookbehind fixes that at the source by refusing to begin inside a
+# larger number, and costs exactly one match corpus-wide -- that artifact.
+PAIR_DURATION = re.compile(
+    r"(?<![\d.,])([0-9lIOoSB][0-9lIOoSB ]{0,5})"
+    r"\s*[\(\[l]\s*([a-zA-Z][a-zA-Z\s]*?)\s*[\)\]]\s*"
+    r"(?i:(" + _UNIT_ALT + r"))\b")
+
+# A duration is a count, not a rate, so the percentage CEILING does not apply.
+# This bound exists for the same reason that one does -- to catch digits glued
+# together by a lost separator -- but at a scale a real deadline can reach.
+# The longest observed in the corpus is 60 tahun.
+DURATION_CEILING = 1000
+
+
+def parse_digits_count(raw):
+    """'l2' -> (12, True). A bare integer with glyph repair, no percent tail."""
+    body = raw.strip().replace(" ", "")
+    if not body:
+        return None, False
+    repaired = body.translate(GLYPH)
+    if not re.fullmatch(r"\d+", repaired):
+        return None, False
+    val = int(repaired)
+    if val > DURATION_CEILING:
+        return None, True
+    return val, repaired != body
+
+
+def parse_words_count(raw):
+    """'dua belas' -> (12, False). The word channel without a unit suffix."""
+    toks, repaired, unresolved = _vocab_tokens(raw)
+    if unresolved or not toks:
+        return None, repaired
+    # A duration is a whole count; `koma` here means the parenthetical is not
+    # one, and `persen` means PAIR_DURATION matched something it should not.
+    if "koma" in toks or "persen" in toks:
+        return None, repaired
+    val = _int_from(toks)
+    if val == 0 or val > DURATION_CEILING:
+        return None, repaired
+    return val, repaired
+
+
+def normalise_unit(raw):
+    """'hari  kerja' -> 'hari_kerja'. Never collapses hari kerja into hari."""
+    return re.sub(r"\s+", "_", raw.strip().lower())
 
 
 # ---------------------------------------------------------- reconciliation
@@ -208,9 +338,31 @@ def recover(numeral, words):
       disagree        both parsed, different values     -> HUMAN REVIEW
       unparsed        neither channel                   -> HUMAN REVIEW
     """
-    dv, dr = parse_digits(numeral)
-    wv, wr = parse_words(words)
+    rec = _reconcile(numeral, words, *parse_digits(numeral), *parse_words(words))
+    rec["unit"] = "fraction"
+    return rec
 
+
+def recover_duration(numeral, words, unit):
+    """As `recover`, for a duration. The value is a count, and `unit` is kept
+    verbatim rather than converted -- see TIME_UNITS."""
+    rec = _reconcile(numeral, words,
+                     *parse_digits_count(numeral), *parse_words_count(words))
+    rec["unit"] = normalise_unit(unit)
+    return rec
+
+
+def _reconcile(numeral, words, dv, dr, wv, wr):
+    """The channel arithmetic, shared by every unit.
+
+    Deliberately knows nothing about what the number measures: the asymmetry it
+    exploits is in the encoding, not the quantity. Measured over the numeral
+    vocabulary, 78.3% of single-character digit corruptions parse to a valid
+    but different number, while 0 of 1,924 word corruptions land on another
+    vocabulary word -- the spelled-out channel is error-detecting and the digit
+    channel is not. That is why a repaired channel yields to an unrepaired one,
+    and why two clean channels that disagree are referred rather than resolved.
+    """
     rec = {
         "source_numeral": numeral,
         "source_words": words,
@@ -243,10 +395,13 @@ def recover(numeral, words):
 
 
 def scan(text):
-    """Find and recover every digits-plus-words percentage pair in a document.
+    """Find and recover every double-written numeral in a document.
 
-    Each record carries the character offsets of the whole match so callers
-    can annotate the source text in place.
+    Covers both shapes: a percentage, which keeps its unit inside the
+    parenthetical, and a duration, which puts it after. Each record carries the
+    character offsets of the whole match so callers can annotate the source
+    text in place, and the list is returned in reading order so slot ids follow
+    the page.
     """
     out = []
     for m in PAIR.finditer(text):
@@ -254,6 +409,19 @@ def scan(text):
         rec["start"], rec["end"] = m.start(), m.end()
         rec["matched_text"] = m.group(0)
         out.append(rec)
+
+    taken = [(r["start"], r["end"]) for r in out]
+    for m in PAIR_DURATION.finditer(text):
+        # A percentage never has a time unit after its parenthetical, so the
+        # two patterns should not compete. Assert it rather than assume it.
+        if any(s < m.end() and m.start() < e for s, e in taken):
+            continue
+        rec = recover_duration(m.group(1).strip(), m.group(2).strip(), m.group(3))
+        rec["start"], rec["end"] = m.start(), m.end()
+        rec["matched_text"] = m.group(0)
+        out.append(rec)
+
+    out.sort(key=lambda r: (r["start"], r["end"]))
     return out
 
 
