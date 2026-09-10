@@ -34,7 +34,7 @@ holds decisions, status, and what to do next.
 | `src/page_reconcile.py` | working, 182 pages / 742 figures, 1 disagreement corpus-wide |
 | `data/gold/norms.json` | **hand-written fixture**, 8 norms |
 | `data/gold/ontology.json` | **hand-written fixture**, 23 categories |
-| `prompts/extraction_prompt.md` | written, **never executed** |
+| `prompts/extraction_prompt.md` | v0.2, rewritten for the structured corpus, **never executed** |
 | `src/ontology_build.py` | working, 12/12 on UU Pasal 55, 8/8 gold; 86% cross-instrument recall |
 | `src/prefilter.py` | working, run over all 34 documents; 1,340/3,614 body pasal selected |
 | extraction runner | does not exist |
@@ -438,7 +438,15 @@ mechanism just flags everything it touches.
    same problem twice.
 4. **Extraction runner.** Prompt → API → validate → repair (two attempts on the
    failing norm only, not the whole pasal, then human queue). Test on UU Pasal
-   58 first, since gold exists for it. Score element-wise — `applies_to` F1, `bounds` accuracy,
+   58 first, since gold exists for it. **Two things settled before this
+   starts.** Few-shot examples must never be gold provisions — v0.1's were all
+   eight of them, which would have scored the prompt rather than the model;
+   check any new example against `data/gold/norms.json`. And `applies_to` F1
+   carries a ceiling below 1.0 that belongs to the ontology, not extraction:
+   `listrik_industri_sumber_lain` (UU 58(3) huruf a), `karaoke_keluarga` and
+   `karaoke_dewasa` are referenced by gold norms but originate in rate
+   provisions, so the builder cannot supply them and the correct model output
+   is `category_not_in_ontology`. Report that ceiling explicitly. Score element-wise — `applies_to` F1, `bounds` accuracy,
    `is_residual` accuracy, `norm_type` accuracy — reported separately, not as
    exact-match. Prediction worth testing: `is_residual` will be the weakest
    field, because it needs sibling context rather than the provision alone.

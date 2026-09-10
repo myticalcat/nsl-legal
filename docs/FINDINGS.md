@@ -765,6 +765,42 @@ survive them *through repair*, so the text layer's `dta persen` snaps to `dua`
 and keys against the re-OCR's clean `dua persen`. Without that, three pairs in
 UU 1/2022 looked lost when they were the same provisions read correctly.
 
+**The v0.1 extraction prompt was contaminated with the entire gold fixture
+(2026-09-10).** Its two few-shot examples were UU Pasal 58 and Perda Surabaya
+Pasal 27 — all eight provisions in `data/gold/norms.json`, shown with their
+answers. Stage 4 scores on UU Pasal 58, so a run with that prompt would have
+measured recall of its own prompt and reported it as extraction accuracy.
+Caught before any API call. v0.2 draws its examples from Perda Tangerang
+Selatan 10/2023 Pasal 26, Perda Denpasar 5/2023 Pasal 86 and Perda Padang
+Panjang 1/2024 Pasal 36, none of which the fixture covers, and any future
+example must be checked against `data/gold/norms.json` first.
+
+**Three ids the gold norms reference cannot be produced by the ontology
+builder**, and one of them is in the Stage 4 test provision:
+
+    karaoke_keluarga               Perda Surabaya 7/2023 Pasal 27(2)
+    karaoke_dewasa                 Perda Surabaya 7/2023 Pasal 27(3)
+    listrik_industri_sumber_lain   UU 1/2022 Pasal 58(3) huruf a
+
+All three originate in *rate* provisions. The builder harvests definitional
+articles, so it cannot mint them — this is the `karaoke keluarga` problem from
+Stage 2, and it is not a one-off: it reaches the electricity categories too,
+and through them into UU Pasal 58.
+
+The consequence for Stage 4 is a scoring ceiling that has nothing to do with
+the model. Of the four gold norms on Pasal 58, UU-58-3a's `applies_to` is
+`["listrik_industri_sumber_lain"]`, an id the vocabulary will not contain, so
+the correct model behaviour — `category_not_in_ontology` — scores as a miss
+against gold. **`applies_to` F1 must be reported with that ceiling stated**,
+not silently absorbed, and the fix is the two-pass ontology already described
+under open work 2 rather than letting the model guess at the nearest id.
+
+The same check found the prompt's own examples using `listrik_*` ids that the
+built vocabulary lacks. Corrected: Example 1 now logs every electricity
+sub-item as `category_not_in_ontology`, which is both what the vocabulary
+actually supports today and a demonstration of the escape hatch on a real
+provision.
+
 ## The worked example
 
 **A candidate real conflict.** UU Pasal 55(1) lists `panti pijat dan pijat
