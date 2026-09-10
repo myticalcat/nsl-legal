@@ -92,9 +92,13 @@ def chapeau_of(container, children, doc_start_key="start"):
     """The container's own text, up to where its first huruf child begins."""
     offset = children[0][doc_start_key] - container[doc_start_key]
     text = canonical(container["text"][:offset])
-    # `structure.py` puts the huruf marker outside the child's span, so the
-    # chapeau ends with a dangling `a.` that has to come off.
-    return re.sub(r"\s*[a-zA-Z][.)]\s*$", "", text)
+    # `structure.py` puts the marker outside the child's span, so the chapeau
+    # ends with a dangling `a.` or `1.` that has to come off. Digits matter:
+    # stripping only letters left every angka list's chapeau reading
+    # `... meliputi: 1.`, and because OPENERS is anchored at `$` that silently
+    # rejected the whole level -- Perwali Surabaya 33/2024 Pasal 103 nests its
+    # PBJT categories under `huruf -> angka` and recovered nothing at all.
+    return re.sub(r"\s*[a-zA-Z0-9]{1,3}[.)]\s*$", "", text)
 
 
 def subject_of(chapeau):
@@ -222,13 +226,29 @@ def is_term_like(label):
 # -------------------------------------------------------------------- harvest
 
 def containers(pasal):
-    """Every unit that can own a huruf list, with its children."""
+    """Every unit that can own an enumerated list, with its children.
+
+    Both marker levels count. A definitional list is not always at `huruf`:
+    Perwali Surabaya 33/2024 Pasal 103 puts the PBJT categories at
+    `ayat -> huruf -> angka`, and harvesting only huruf misses the document
+    entirely.
+    """
     out = []
     if pasal.get("huruf"):
         out.append((pasal, pasal["huruf"]))
+    elif pasal.get("angka"):
+        out.append((pasal, pasal["angka"]))
     for a in pasal.get("ayat") or []:
         if a.get("huruf"):
             out.append((a, a["huruf"]))
+            for h in a["huruf"]:
+                if h.get("angka"):
+                    out.append((h, h["angka"]))
+        elif a.get("angka"):
+            out.append((a, a["angka"]))
+    for h in pasal.get("huruf") or []:
+        if h.get("angka"):
+            out.append((h, h["angka"]))
     return out
 
 

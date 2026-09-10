@@ -33,7 +33,7 @@ holds decisions, status, and what to do next.
 | `data/gold/norms.json` | **hand-written fixture**, 8 norms |
 | `data/gold/ontology.json` | **hand-written fixture**, 23 categories |
 | `prompts/extraction_prompt.md` | written, **never executed** |
-| `src/ontology_build.py` | working, 12/12 on UU Pasal 55; 8/8 gold recovered |
+| `src/ontology_build.py` | working, 12/12 on UU Pasal 55, 8/8 gold; 86% cross-instrument recall |
 | `src/prefilter.py` | working, run over all 34 documents; 1,340/3,614 body pasal selected |
 | extraction runner | does not exist |
 | cross-reference resolver | exists but broken; see open work 2 |

@@ -523,6 +523,65 @@ provisions directly is possible (the drafting is regular: the list sits between
 depend on rate provisions again, which is the mistake that lost ten of the
 twelve statutory categories in the first place.
 
+**How good is the ontology builder, measured (2026-09-10).** The corpus is its
+own replicate set: 24 of the 34 documents reproduce UU Pasal 55(1)'s twelve-item
+list in their own definitional article, so recall can be measured without new
+annotation. Result: **240/279 items, 86%**, with 19 of 24 documents at 100%.
+
+    Gorontalo 1/2024        7/12   58%
+    Lubuk Linggau 12/2023   7/11   64%
+    Lhokseumawe 1/2024      0/11    0%
+    Sibolga 1/2024          0/12    0%
+    Perwali Surabaya 33     1/8    12%
+    all others (19)                100%
+
+**Every failure is upstream input damage or nesting, not category logic.**
+Lhokseumawe (85/85 pages OCR'd) and Sibolga (102/139) lost their huruf markers
+to OCR: the list arrives as one run-on huruf with commas and colons where
+`b.` `c.` `d.` should be, and `structure.py` correctly refuses to invent a
+validated run from it. Gorontalo and Lubuk Linggau are the same failure,
+milder. Perwali Surabaya 33 is different -- its list is not the statutory
+categories at all but the payment components of each, nested a level deeper.
+
+**Two builder bugs found by this measurement, both fixed.** `chapeau_of`
+stripped only a trailing *letter* marker, so an angka list's chapeau read
+`... meliputi: 1.` and, because the opener regex is anchored at `$`, every
+angka-level enumeration was silently rejected. And `containers()` looked only
+at pasal- and ayat-level huruf, so a list nested at `ayat -> huruf -> angka`
+was never reached. Together these hid Perwali Surabaya 33/2024 Pasal 103
+entirely. Fixing both added 201 local categories and 160 coverage-log entries;
+the Pasal 55 check is unchanged at 12/12 and 8/8.
+
+**Precision is not measured and should not be quoted.** The `taxable_subject`
+tag is a regex over the subject phrase, validated against nothing. Of 38
+national subject nodes roughly 17 look like tax objects by inspection, but that
+is an eyeball, not an evaluation. Recall has a replicate set; precision would
+need annotation.
+
+**Where a model would and would not help.** The failures that exist are
+concentrated in OCR-flattened lists, and that is precisely where an LLM would
+win -- `tontonan film ..., pergelaran kesenian, musik, tari, ..., kontes
+kecantikan, ...` is recognisably a twelve-item enumeration even with the
+markers gone, and the boundary of the first item's `yang` clause is not
+recoverable by any rule that does not already know the list. The distributive
+head (74 cases) and the taxable/procedural split are also semantic and a model
+would beat the current regexes on both.
+
+Three reasons not to reach for one first. The ontology is the vocabulary that
+`applies_to` is *scored against*, so building it neurally makes the extraction
+metric circular. A hallucinated category is worse than a missing one: a missing
+category fails loudly as `category_not_in_ontology`, while an invented id
+silently participates in subsumption and can only produce wrong verdicts. And
+it costs the one-neural-stage property, which is the paper's measurement story.
+
+And there is a deterministic path that targets the actual failures. 19 of 24
+documents yield the twelve-item list cleanly and UU 1/2022 yields it perfectly,
+so the damaged copies can be recovered by *aligning* their flattened text
+against the already-recovered statutory list -- the same cross-instrument
+redundancy that settled the Perwal Jogja `67%`. That is verifiable, needs no
+model, and would address 4 of the 5 failing documents. Try it before adding a
+second neural stage.
+
 ## The worked example
 
 **A candidate real conflict.** UU Pasal 55(1) lists `panti pijat dan pijat
