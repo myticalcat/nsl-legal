@@ -30,6 +30,7 @@ holds decisions, status, and what to do next.
 | `src/structure.py` | working, 6,411 pasal, 8/8 gold citations resolve |
 | `src/slotting.py` | working, demo runs through real segmentation, not wired to an API |
 | `src/detect.py` | working, 21 categories, 2 conflicts found |
+| `src/calibrate_ocr.py` | working, tesseract baseline passes the 2-page gate |
 | `data/gold/norms.json` | **hand-written fixture**, 8 norms |
 | `data/gold/ontology.json` | **hand-written fixture**, 23 categories |
 | `prompts/extraction_prompt.md` | written, **never executed** |
@@ -288,6 +289,17 @@ confirmation. Score the builder on statutory recovery only.
   to 7 and split that document into nine sections. Repair the suffix to a
   digit only when it restores an ascending sequence -- never by glyph alone,
   because `Pasal 12A` is a real amendment insertion and `B` would become 8.
+- **A replacement OCR engine must pass `src/calibrate_ocr.py` first.** Two
+  pages, chosen to pull in opposite directions: UU 1/2022 p17, where a faithful
+  read of the image *resolves* a disagreement (the text layer inserted a zero),
+  and Perwal Jogja p89, where a faithful read *preserves* one (the enacted text
+  contradicts itself). An engine that returns `60%` for the second has
+  harmonised the statute and deleted a finding — that is a failure, however
+  clean the output looks. Scoring reuses `ocr_numerals.scan`, so the gate is
+  the pipeline's own reconciliation. tesseract passes 2/2 and is the baseline
+  to beat. Fidelity is necessary and not sufficient: the same harness probes
+  Lhokseumawe p20, where tesseract keeps the characters and loses 8 of 8 huruf
+  markers, so a candidate must beat that *without* failing the gate.
 - **Text extraction records its own method, per page.** `text_layer` and `ocr`
   pages do not warrant equal trust and must stay distinguishable downstream; a
   page whose corrupted text layer was replaced also keeps the discarded string.

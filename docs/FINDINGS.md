@@ -582,6 +582,52 @@ redundancy that settled the Perwal Jogja `67%`. That is verifiable, needs no
 model, and would address 4 of the 5 failing documents. Try it before adding a
 second neural stage.
 
+**OCR calibration harness (`src/calibrate_ocr.py`, 2026-09-10).** Before
+swapping the OCR engine on the two scanned documents, a candidate has to show
+it transcribes what is on the page rather than what ought to be there. An
+engine that quietly repairs damage is worse than tesseract, because the whole
+two-channel design exists to detect damage and a smoothing engine deletes
+findings instead of reporting them.
+
+The gate is two pages chosen to pull in opposite directions, so neither a
+uniformly aggressive nor a uniformly conservative engine can pass both:
+
+    UU 1/2022 p17     glyphs read `6% (enam persen)`, text layer says `60%`.
+                      A faithful transcription RESOLVES the disagreement.
+    Perwal Jogja p89  glyphs read `67% (enam puluh persen)` on a clean page.
+                      A faithful transcription PRESERVES it. An engine
+                      returning `60%` has harmonised the enacted text.
+
+Scoring runs `ocr_numerals.scan` over the transcription, so the test is the
+same reconciliation the pipeline applies downstream rather than a bespoke
+check. **Baseline: tesseract passes 2/2.** This also automates what was
+previously a manual step -- FINDINGS records that every `disagree` was settled
+by opening the page image, and the UU case now settles itself: OCR of the image
+reads `6%`, both channels agree at 0.06, and the text layer is shown to be the
+liar.
+
+A third page is reported but not gated, because fidelity is necessary and not
+sufficient -- tesseract is faithful on the gate and still loses whole
+provisions. Lhokseumawe p20 carries the twelve-item Pasal 55 list; tesseract
+recovers **0 of the 8 markers `b.` to `i.`** and **1 of the 5 huruf-l terms**.
+The characters are near-perfect and the structure is gone.
+
+Two flaws in the probe itself, both found by checking the number rather than
+trusting it. Matching `bar` as a bare substring hits `barang` and `gambar`, and
+reported the huruf-l bracket as 2/5 recovered when only `mandi uap` was
+present. And searching the whole page for markers counted `b.` and `c.` from an
+unrelated `jasa tempat parkir` list above the provision, reporting 2/8 when the
+list under test had lost every one. Scoped to the region between the
+`Jasa Kesenian dan Hiburan` opener and the `dikecualikan` exclusion, and
+matching on word boundaries, the honest figures are 0/8 and 1/5.
+
+**Lhokseumawe has lost huruf l entirely, and nothing downstream can recover
+it.** `diskotek`, `karaoke` and `kelab malam` occur zero times in the whole
+document -- the bracket the worked example turns on, absent from an entire
+instrument. This is content loss at the input, not a segmentation or ontology
+failure, and it was invisible until the cross-instrument recall check compared
+the document against the 23 others that carry the same list.
+
 ## The worked example
 
 **A candidate real conflict.** UU Pasal 55(1) lists `panti pijat dan pijat
