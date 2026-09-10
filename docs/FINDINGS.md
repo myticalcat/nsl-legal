@@ -628,6 +628,143 @@ instrument. This is content loss at the input, not a segmentation or ontology
 failure, and it was invisible until the cross-instrument recall check compared
 the document against the 23 others that carry the same list.
 
+**UU 1/2022's embedded text layer is worse than re-OCRing its own images
+(2026-09-10).** Measured on the twelve pages whose text layer yields a repaired
+or disputed numeral pair:
+
+    embedded text layer   46 pairs   22 agree   23 recovered   1 disagree
+    re-OCR (tesseract)    41 pairs   35 agree    6 recovered   0 disagree
+
+`4Oo/o`, `2Oo/o`, `lOVo`, `l0%`, `4OVo`, `16,2%o` -- the corruptions that
+motivated the two-channel design and that sit in `data/gold/norms.json` as
+`"source_numeral": "4Oo/o", "ocr_recovered": true` -- are artifacts of the
+scanner's own OCR **embedded in the PDF**, not of the page images. Rendering
+Pasal 58 at 300dpi and running plain tesseract yields
+`ditetapkan paling rendah 40% (empat puluh persen)`, clean, where the text
+layer reads `4Oo/o lempat puluh persen)`. The page-17 `60%` disagreement
+resolves the same way, to `6%`.
+
+The corruption detector cannot see this class, and that is the reason it
+survived. Pages are classified by character-script anomaly, which is right for
+the CJK-mojibake failure in Sibolga but blind here: `4Oo/o` is script-clean
+Latin, `garbage_ratio` is 0.0, and every UU page is therefore marked
+`text_layer` / `clean` and never re-OCRed.
+
+Two consequences. First, the headline "100 pairs found, 61 agree, 38 recovered"
+measures the *text layer*, and much of that recovery repaired damage a better
+input choice would not have had. The two-channel design is still justified --
+Perwal Jogja's `67%` is a real enacted defect and Perda Mojokerto's `6O%` is a
+born-digital document that was never scanned -- but the recovery *rate* is
+inflated by a fixable input decision and should not be quoted as the corpus's
+inherent noise level.
+
+Second, re-OCR is not free: the pair count drops from 46 to 41 on these pages,
+so some pairs are found by the text layer and not by tesseract (p65 loses two,
+p66 gains one). Verify what is lost before switching -- a cleaner channel that
+drops provisions is not an improvement. The right comparison is per-pair, not
+per-status-histogram.
+
+**The text layer and a re-OCR fail on disjoint figures, so neither replaces
+the other (2026-09-10).** Following up the 46 -> 41 pair drop: no provision is
+lost. Of the 11 pairs the text layer finds and tesseract does not, 3 are the
+*same* provisions read correctly -- `2%o (dta persen)`, `l2%o (dta belas
+persen)` and `3o/o (liga persen)` come back as `2% (dua persen)`,
+`12% (dua belas persen)` and `3% (tiga persen)`. They only looked lost because
+the text layer's own words were garbage, so the two readings did not key
+together.
+
+The other 8 are a new corruption pattern, and it belongs to tesseract rather
+than to the scan: **the percent sign after a decimal comma is read as a
+digit.**
+
+    text layer      re-OCR        provision
+    0,5%            0,596         UU p17, PBB-P2 related rate
+    0,5%            0,54          UU p28 Pasal 41(1), PBB-P2 ceiling
+    7,5%            7,54          UU p64, DBH provincial share
+    16,2%           16,2"         UU p65
+    73,8%           73,84         UU p65
+    15,5%           15,556        UU p68
+
+Whole-number percentages are unaffected -- `20%`, `100%`, `75%` all survive
+re-OCR cleanly. It is specifically the `,N%` shape that breaks.
+
+So the two sources are wrong about different things. The embedded text layer
+corrupts whole-number percentages by letter-for-digit glyph confusion
+(`40%` -> `4Oo/o`, `10%` -> `lOVo`); the re-OCR corrupts the percent sign after
+decimals. That is genuine independence, of exactly the kind the digits/words
+reconciliation already exploits, and it argues against replacing one with the
+other. **Reconcile them instead**: run both, key pairs by their spelled-out
+words, and where the two readings disagree the existing `disagree` machinery
+already knows what to do. Up to four readings per figure -- two sources, two
+channels each -- and each source's blind spot is the other's clean case.
+
+This also reframes what a third engine would be for. A layout-aware OCR is not
+a replacement for either source; it is a third independent reading, valuable
+where both current ones fail outright (Lhokseumawe's lost huruf l, which no
+reconciliation can recover because neither source has the text) and as a
+tiebreaker where they disagree.
+
+**Possible recovery for the 8, not yet implemented.** `PAIR` requires a
+percent-like tail on the digit group, which is why `0,54 (nol koma lima
+persen)` produces nothing. But the parenthetical is itself the disambiguator --
+a bracketed phrase ending in `persen` says the preceding figure is a
+percentage, whatever happened to the sign. A variant admitting a missing or
+corrupted tail *only* when the words end in `persen` would recover all 8, and
+would also pick up the legitimate unsigned form `sebesar 3 (tiga) persen`.
+Measure the false-positive rate before adding it: `PAIR` is load-bearing and
+widening it is the kind of change that silently costs provenance.
+
+**Page-level reconciliation, whole corpus (`src/page_reconcile.py`,
+2026-09-10).** 182 pages, 742 figures. Candidates are pages whose current
+reading already yields a repaired or disputed pair -- 189 of 5,332, of which 7
+were already OCR-extracted and excluded, because on those both readings are
+tesseract on the same image and agreement proves nothing about the source.
+
+      428  sources_agree                 both readings clean, same value
+      287  sources_agree_after_repair    same value, one reading needed repair
+       25  single_source
+        1  text_layer_yields
+        1  sources_disagree
+
+**The two independent readings contradict each other exactly once in the whole
+corpus.** 715 of 742 figures were seen by both, and 714 of those agree.
+
+The two exceptions are the two cases the calibration gate was built around, and
+they resolve in opposite directions, which is the point:
+
+  UU 1/2022 p17 is `text_layer_yields`. The embedded layer reads `60% (enam
+  persen)` -- internally contradictory, value None -- and the re-OCR reads
+  `6% (enam persen)`, clean. The clean reading wins and the figure resolves to
+  0.06. This is the conclusion FINDINGS previously recorded as reached by a
+  human opening the page image; it is now derived by the pipeline, and nothing
+  in the `disagree` machinery had to change to get it.
+
+  Perwal Jogja p89 is the sole `sources_disagree`. **Both** readings report
+  `67%` against `enam puluh persen`. A fresh OCR of the page image says exactly
+  what the text layer says, so the contradiction is not an extraction artifact
+  at either level -- it is in the enacted document. Combined with the five
+  other instruments carrying the same sentence at 60%, this is now confirmed
+  three independent ways: the provision's own two channels, a second reading of
+  the page, and cross-instrument text reuse.
+
+**287 figures moved from "recovered" to "confirmed".** These are figures where
+one reading needed repair and a second, independent reading returned the same
+value. That is the direct answer to the inflated-recovery-rate problem: the
+corpus's apparent noise level was substantially an artifact of trusting one
+reading, and most of it dissolves against a second.
+
+25 figures exist in only one reading, and the split is informative: 17 come
+from the text layer only -- the `,N%` decimal shape tesseract misreads -- and
+8 from the re-OCR only, figures the embedded layer never yielded as a pair at
+all (`16%`, `12%`, `8%`, `80%` in UU 1/2022 alone). So the second reading is
+not merely a check; it recovers provisions the first one lost.
+
+Alignment keys on the spelled-out words rather than the digits, because the
+words are the error-detecting channel and survive both failure modes -- and
+survive them *through repair*, so the text layer's `dta persen` snaps to `dua`
+and keys against the re-OCR's clean `dua persen`. Without that, three pairs in
+UU 1/2022 looked lost when they were the same provisions read correctly.
+
 ## The worked example
 
 **A candidate real conflict.** UU Pasal 55(1) lists `panti pijat dan pijat

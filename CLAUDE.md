@@ -31,6 +31,7 @@ holds decisions, status, and what to do next.
 | `src/slotting.py` | working, demo runs through real segmentation, not wired to an API |
 | `src/detect.py` | working, 21 categories, 2 conflicts found |
 | `src/calibrate_ocr.py` | working, tesseract baseline passes the 2-page gate |
+| `src/page_reconcile.py` | working, 182 pages / 742 figures, 1 disagreement corpus-wide |
 | `data/gold/norms.json` | **hand-written fixture**, 8 norms |
 | `data/gold/ontology.json` | **hand-written fixture**, 23 categories |
 | `prompts/extraction_prompt.md` | written, **never executed** |
@@ -300,6 +301,39 @@ confirmation. Score the builder on statutory recovery only.
   to beat. Fidelity is necessary and not sufficient: the same harness probes
   Lhokseumawe p20, where tesseract keeps the characters and loses 8 of 8 huruf
   markers, so a candidate must beat that *without* failing the gate.
+- **Reconciliation is measured, not just proposed.** `src/page_reconcile.py`
+  over the whole corpus: 182 pages, 742 figures, **428 `sources_agree`, 287
+  `sources_agree_after_repair`, 25 `single_source`, 1 `text_layer_yields`, 1
+  `sources_disagree`.** Two independent readings contradict each other exactly
+  once — Perwal Jogja p89, where both report `67%` against `enam puluh
+  persen`, confirming the defect is in the enacted text and not in either
+  extraction. UU p17 resolves the other way, the text layer yielding to a clean
+  re-OCR at 6%. The 287 `sources_agree_after_repair` figures are the ones that
+  matter for the paper: they were `recovered` against one reading and are
+  *confirmed* against two.
+- **Do not replace the text layer with a re-OCR — reconcile them.** Measured
+  2026-09-10: the two fail on *disjoint* figures. The embedded text layer
+  corrupts whole-number percentages by glyph confusion (`40%` -> `4Oo/o`);
+  tesseract re-OCR corrupts the percent sign after a decimal comma
+  (`0,5%` -> `0,54`, `15,5%` -> `15,556`, `73,8%` -> `73,84`), while reading
+  whole numbers cleanly. Neither dominates. Treat them as two independent
+  readings of the page, key pairs by their spelled-out words, and let the
+  existing `disagree` machinery handle conflicts — up to four readings per
+  figure, two sources with two channels each. Verified that no provision is
+  lost either way: of 11 pairs the text layer finds and re-OCR does not, 3 are
+  the same provisions read *correctly* (`dta persen` -> `dua persen`) and 8 are
+  the decimal-percent pattern above.
+- **A clean text layer is not necessarily an accurate one.** Measured
+  2026-09-10: on UU 1/2022's twelve most-damaged pages the embedded text layer
+  gives 22 agree / 23 recovered / 1 disagree, and re-OCRing the same images
+  with plain tesseract gives 35 / 6 / 0. `4Oo/o` and `l0%` are the *scanner's*
+  OCR embedded in the PDF; the page images are clean. The corruption detector
+  is blind to this by construction — it keys on character-script anomaly, which
+  catches Sibolga's CJK mojibake but not script-clean Latin damage, so these
+  pages are marked `text_layer` / `clean` and never re-OCRed. Do not quote the
+  corpus recovery rate as inherent noise; much of it is this. Before switching
+  the UU to re-OCR, check what is lost: the pair count drops 46 → 41 on those
+  pages, so some provisions the text layer finds, tesseract does not.
 - **Text extraction records its own method, per page.** `text_layer` and `ocr`
   pages do not warrant equal trust and must stay distinguishable downstream; a
   page whose corrupted text layer was replaced also keeps the discarded string.
